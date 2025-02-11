@@ -43,15 +43,27 @@ chatbot-rag-firefight/
 └── README.md            # Project documentation
 ```
 
-## Performance Specifications
+## System Requirements and Performance
 
-The system is designed to meet strict performance requirements:
+### Hardware Requirements
+The system is optimized for local development on macOS with:
+- Apple M1/M2 series processor or equivalent
+- Minimum 16GB RAM recommended
+- At least 256GB available SSD storage
+- macOS Monterey or newer
 
-- Query Response Time: < 2 seconds
-- Embedding Generation: < 100ms per chunk
-- Storage Efficiency: < 2GB per 1000 pages
-- Chunk Parameters: 512 tokens with 50 token overlap
-- Maximum Input: 4096 tokens per document
+### Performance Targets
+The system is designed for efficient local processing:
+
+- Query Response Time: < 3 seconds total
+  - Embedding generation: < 200ms
+  - Vector search: < 100ms
+  - Response generation: < 2.5 seconds
+- Document Processing: < 5 seconds per page
+- Peak Memory Usage: < 4GB
+- Storage Usage: < 1GB per 500 pages of documents
+
+For detailed technical specifications, including optimization strategies, monitoring setup, and development configurations, see our [Technical Documentation](docs/TECHNICAL.md).
 
 ## Getting Started
 
@@ -121,11 +133,3 @@ pytest --cov=src tests/
 ## License
 
 [Your License Here]
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-## Contact
-
-[Your Contact Information]
