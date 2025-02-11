@@ -99,6 +99,11 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
+# Coverage data
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # Documentation
 docs/_build/

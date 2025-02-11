@@ -1,11 +1,9 @@
 [project]
-name = "first_responder_rag"
+name = "chatbot-rag-firefight"
 version = "0.1.0"
-description = "A RAG-based chatbot for first responders using Python 3.12"
+description = "A RAG-based chatbot for firefighters and first responders using Python 3.12"
 requires-python = ">=3.12"
-authors = [
-    {name = "Your Name", email = "your.email@example.com"},
-]
+authors = [{ name = "Edmund Yu" }]
 dependencies = [
     "farm-haystack>=1.15.0",
     "torch>=2.1.0",
@@ -31,21 +29,20 @@ docs = [
     "sphinx-rtd-theme>=1.3.0",
     "sphinx-autodoc-typehints>=1.24.0",
 ]
-web = [
-    "gradio>=4.0.0",
-    "fastapi>=0.104.0",
-    "uvicorn>=0.24.0",
-]
+web = ["gradio>=4.0.0", "fastapi>=0.104.0", "uvicorn>=0.24.0"]
 
 [build-system]
 requires = ["hatchling>=1.18.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 88
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
-ignore = ["E501"]  # Let black handle line length
+ignore = ["E501"]
 
 [tool.black]
 target-version = ["py312"]
@@ -53,24 +50,5 @@ line-length = 88
 
 [tool.pytest.ini_options]
 minversion = "7.4"
-addopts = "-ra -q --cov=first_responder_rag"
+addopts = "-ra -q --cov=src"
 testpaths = ["tests"]
-
-[tool.coverage.run]
-source = ["first_responder_rag"]
-branch = true
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
