@@ -60,10 +60,6 @@ class HaystackDocumentProcessor:
         )
         self.text_embedder = SentenceTransformersTextEmbedder(model=embedding_model)
 
-        # Warm up the embedders
-        self.document_embedder.warm_up()
-        self.text_embedder.warm_up()
-
         # Get embedding dimension
         embedding_dim = 384  # Default for all-MiniLM-L6-v2
 
@@ -158,14 +154,7 @@ class HaystackDocumentProcessor:
         self, query: str, top_k: int = 5, filters: Optional[Dict] = None
     ) -> List[Document]:
         """Search for relevant documents using semantic search."""
-        # First, generate embedding for the query text
-        query_embedding_result = self.text_embedder.run(text=query)
-        query_embedding = query_embedding_result["embedding"]
-
-        # Then use the embedding with the retriever
-        result = self.retriever.run(
-            query_embedding=query_embedding, top_k=top_k, filters=filters
-        )
+        result = self.retriever.run(query=query, top_k=top_k, filters=filters)
         documents = result["documents"]
         logger.info(f"Found {len(documents)} documents for query: '{query[:50]}...'")
         return documents

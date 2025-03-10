@@ -5,7 +5,7 @@ description = "A RAG-based chatbot for firefighters and first responders using P
 requires-python = ">=3.12"
 authors = [{ name = "Edmund Yu" }]
 dependencies = [
-    "haystack-ai>=2.0.0",
+    "haystack-ai>=2.11.0",
     "torch>=2.1.0",
     "transformers>=4.36.0",
     "sentence-transformers>=2.2.2",

@@ -45,11 +45,13 @@ data/models/*
 # IDE specific files
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 .project
 .pydevproject
 .settings/
+.ropeproject/
 
 # Operating system files
 .DS_Store
