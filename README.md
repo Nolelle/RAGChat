@@ -94,6 +94,36 @@ For detailed technical specifications, including optimization strategies, monito
    pytest
    ```
 
+## Using the CLI
+
+The system includes a command-line interface powered by Haystack for document processing and querying:
+
+### Processing Documents
+
+To process a single document:
+```bash
+python main.py process-document path/to/your/document.pdf
+```
+
+To process all documents in a directory:
+```bash
+python main.py process-directory path/to/your/documents/
+```
+
+### Searching for Information
+
+To query the knowledge base:
+```bash
+python main.py query "What is the procedure for handling a hazardous materials incident?"
+```
+
+### Interactive Chat Mode
+
+For continuous interaction with the knowledge base:
+```bash
+python main.py chat
+```
+
 ## Development
 
 The project uses modern Python tools and practices:

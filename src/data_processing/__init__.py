@@ -16,13 +16,15 @@ from .types import TextChunk
 from .converter import DocumentConverter
 from .chunker import DocumentChunker
 from .processor import DocumentProcessor
+from .haystack_processor import HaystackDocumentProcessor
 
 __all__ = [
-    'TextChunk',
-    'DocumentConverter',
-    'DocumentChunker',
-    'DocumentProcessor',
+    "TextChunk",
+    "DocumentConverter",
+    "DocumentChunker",
+    "DocumentProcessor",
+    "HaystackDocumentProcessor",
 ]
 
 # Version of the data_processing module
-__version__ = '0.1.0'
+__version__ = "0.1.0"

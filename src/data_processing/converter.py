@@ -5,12 +5,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentConverter:
     """Handles conversion of documents to clean text format."""
 
     def __init__(self):
         """Initialize the document converter."""
-        self.supported_formats = {'.txt', '.pdf'}
+        self.supported_formats = {".txt", ".pdf"}
 
     def convert_text(self, text: str, source: str) -> str:
         """Convert raw text to cleaned format.
@@ -23,16 +24,16 @@ class DocumentConverter:
             Cleaned text with normalized whitespace and punctuation
         """
         # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text.strip())
+        text = re.sub(r"\s+", " ", text.strip())
 
         # Remove special characters but keep basic punctuation
-        text = re.sub(r'[^\w\s.,!?-]', '', text)
+        text = re.sub(r"[^\w\s.,!?-]", "", text)
 
         # Normalize line endings
-        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
 
         # Remove multiple consecutive line breaks
-        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
 
         logger.debug(f"Converted text from {source}: {len(text)} characters")
         return text
@@ -60,9 +61,9 @@ class DocumentConverter:
                 f"Supported formats: {self.supported_formats}"
             )
 
-        if suffix == '.txt':
+        if suffix == ".txt":
             return self._load_text(file_path)
-        elif suffix == '.pdf':
+        elif suffix == ".pdf":
             return self._load_pdf(file_path)
 
     def _load_text(self, file_path: Path) -> str:
@@ -75,21 +76,23 @@ class DocumentConverter:
             Cleaned text content
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
             return self.convert_text(text, file_path.name)
         except UnicodeDecodeError:
             # Try alternative encodings if UTF-8 fails
-            encodings = ['latin-1', 'cp1252', 'iso-8859-1']
+            encodings = ["latin-1", "cp1252", "iso-8859-1"]
             for encoding in encodings:
                 try:
-                    with open(file_path, 'r', encoding=encoding) as f:
+                    with open(file_path, "r", encoding=encoding) as f:
                         text = f.read()
                     logger.info(f"Successfully read file using {encoding} encoding")
                     return self.convert_text(text, file_path.name)
                 except UnicodeDecodeError:
                     continue
-            raise ValueError(f"Could not decode file {file_path} with any supported encoding")
+            raise ValueError(
+                f"Could not decode file {file_path} with any supported encoding"
+            )
 
     def _load_pdf(self, file_path: Path) -> str:
         """Load and convert PDF file.
@@ -99,9 +102,18 @@ class DocumentConverter:
 
         Returns:
             Extracted and cleaned text content
-
-        Raises:
-            NotImplementedError: PDF support not yet implemented
         """
-        # TODO: Implement PDF loading using pdfplumber or similar
-        raise NotImplementedError("PDF loading not yet implemented")
+        try:
+            import pdfplumber  # You'll need to add this to your dependencies
+
+            text_content = []
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    extracted_text = page.extract_text() or ""
+                    text_content.append(extracted_text)
+
+            combined_text = "\n\n".join(text_content)
+            return self.convert_text(combined_text, file_path.name)
+        except ImportError:
+            logger.error("pdfplumber not installed. Add it to your dependencies.")
+            raise

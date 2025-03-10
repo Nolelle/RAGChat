@@ -5,7 +5,7 @@ description = "A RAG-based chatbot for firefighters and first responders using P
 requires-python = ">=3.12"
 authors = [{ name = "Edmund Yu" }]
 dependencies = [
-    "farm-haystack>=1.15.0",
+    "haystack-ai>=2.0.0",
     "torch>=2.1.0",
     "transformers>=4.36.0",
     "sentence-transformers>=2.2.2",
@@ -14,6 +14,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "typer>=0.9.0",
     "rich>=13.7.0",
+    "pdfplumber>=0.10.2",
 ]
 
 [project.optional-dependencies]
