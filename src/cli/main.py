@@ -27,6 +27,7 @@ DEFAULT_DATA_DIR = Path("data")
 DEFAULT_RAW_DIR = DEFAULT_DATA_DIR / "raw"
 DEFAULT_PROCESSED_DIR = DEFAULT_DATA_DIR / "processed"
 DEFAULT_EMBEDDINGS_DIR = DEFAULT_DATA_DIR / "embeddings"
+DEFAULT_STORE_PATH = DEFAULT_EMBEDDINGS_DIR / "faiss_store"
 
 # Ensure directories exist
 DEFAULT_RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -41,13 +42,28 @@ def get_processor():
     """Get or initialize document processor."""
     global _processor
     if _processor is None:
-        _processor = HaystackDocumentProcessor()
+        # Try to load existing document store
+        if DEFAULT_STORE_PATH.exists():
+            try:
+                _processor = HaystackDocumentProcessor.load_document_store(
+                    str(DEFAULT_STORE_PATH)
+                )
+                logger.info(f"Loaded existing document store from {DEFAULT_STORE_PATH}")
+            except Exception as e:
+                logger.error(f"Failed to load document store: {e}")
+                logger.info("Initializing new document processor")
+                _processor = HaystackDocumentProcessor(use_faiss=True)
+        else:
+            _processor = HaystackDocumentProcessor(use_faiss=True)
     return _processor
 
 
 @app.command()
 def process_document(
-    file_path: Path = typer.Argument(..., help="Path to the document to process")
+    file_path: Path = typer.Argument(..., help="Path to the document to process"),
+    save_store: bool = typer.Option(
+        True, help="Whether to save the document store after processing"
+    ),
 ):
     """Process a document and add it to the knowledge base."""
     if not file_path.exists():
@@ -59,6 +75,10 @@ def process_document(
     # Process and index document
     processor = get_processor()
     processor.process_and_index_document(file_path)
+
+    # Save document store
+    if save_store:
+        processor.save_document_store(str(DEFAULT_STORE_PATH))
 
     logger.info(f"Document {file_path.name} processed and indexed successfully")
 
@@ -82,6 +102,8 @@ def process_directory(
         logger.info(f"Processing {file_path.name}")
         processor.process_and_index_document(file_path)
 
+    # Save document store
+    processor.save_document_store(str(DEFAULT_STORE_PATH))
     logger.info(f"All {len(files)} documents processed and indexed successfully")
 
 

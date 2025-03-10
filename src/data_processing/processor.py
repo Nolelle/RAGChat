@@ -2,31 +2,29 @@ from pathlib import Path
 from typing import List, Optional
 import logging
 from .converter import DocumentConverter
-from .chunker import DocumentChunker
+from .chunker import HaystackChunker
 from .types import TextChunk
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentProcessor:
     """Main class that combines conversion and chunking functionality."""
 
-    def __init__(self,
-                 chunk_size: int = 512,
-                 chunk_overlap: int = 50,
-                 model_name: str = "google/flan-t5-base"):
+    def __init__(
+        self, chunk_size: int = 500, chunk_overlap: int = 50, split_by: str = "sentence"
+    ):
         """Initialize processor with converter and chunker.
 
         Args:
-            chunk_size: Maximum number of tokens per chunk
-            chunk_overlap: Number of overlapping tokens between chunks
-            model_name: Name of the model whose tokenizer to use
+            chunk_size: Maximum size of chunks in characters
+            chunk_overlap: Overlap between chunks in characters
+            split_by: Method to split text ('sentence', 'word', 'passage', or 'character')
         """
-        logger.info("Initializing DocumentProcessor")
+        logger.info("Initializing DocumentProcessor with Haystack components")
         self.converter = DocumentConverter()
-        self.chunker = DocumentChunker(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            model_name=model_name
+        self.chunker = HaystackChunker(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap, split_by=split_by
         )
 
     def process_document(self, file_path: Path) -> List[TextChunk]:

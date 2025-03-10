@@ -9,6 +9,7 @@ from haystack.components.embedders import (
     SentenceTransformersTextEmbedder,
 )
 from haystack.document_stores.in_memory import InMemoryDocumentStore
+from haystack.document_stores.faiss import FAISSDocumentStore
 from haystack.document_stores.types import FilterType
 
 logger = logging.getLogger(__name__)
@@ -19,10 +20,11 @@ class HaystackDocumentProcessor:
 
     def __init__(
         self,
-        document_store: Optional[InMemoryDocumentStore] = None,
+        document_store: Optional[Any] = None,
         embedding_model: str = "all-MiniLM-L6-v2",
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        use_faiss: bool = True,
     ):
         """Initialize the processor with Haystack components.
 
@@ -31,6 +33,7 @@ class HaystackDocumentProcessor:
             embedding_model: Name of the sentence transformer model for embeddings
             chunk_size: Maximum size of chunks in characters
             chunk_overlap: Overlap between chunks in characters
+            use_faiss: Whether to use FAISS document store for persistence
         """
         logger.info("Initializing Haystack document processor")
 
@@ -52,7 +55,14 @@ class HaystackDocumentProcessor:
         )
 
         # Initialize or use provided document store
-        self.document_store = document_store or InMemoryDocumentStore()
+        if document_store:
+            self.document_store = document_store
+        elif use_faiss:
+            self.document_store = FAISSDocumentStore(
+                embedding_dim=self.document_embedder.embedding_dim
+            )
+        else:
+            self.document_store = InMemoryDocumentStore()
 
         logger.info(
             f"Initialized processor with model: {embedding_model}, chunk size: {chunk_size}"
@@ -174,11 +184,13 @@ class HaystackDocumentProcessor:
         Args:
             file_path: Path to save the document store
         """
-        # Currently not supported with InMemoryDocumentStore
-        # If needed, we could switch to a persistent document store like FAISSDocumentStore
-        logger.warning(
-            "Saving document store not implemented for InMemoryDocumentStore"
-        )
+        if isinstance(self.document_store, FAISSDocumentStore):
+            self.document_store.save(file_path)
+            logger.info(f"Saved FAISS document store to {file_path}")
+        else:
+            logger.warning(
+                f"Saving document store not implemented for {type(self.document_store).__name__}"
+            )
 
     @classmethod
     def load_document_store(cls, file_path: str, **kwargs):
@@ -191,8 +203,11 @@ class HaystackDocumentProcessor:
         Returns:
             HaystackDocumentProcessor instance with loaded document store
         """
-        # Currently not supported with InMemoryDocumentStore
-        logger.warning(
-            "Loading document store not implemented for InMemoryDocumentStore"
-        )
-        return cls(**kwargs)
+        try:
+            document_store = FAISSDocumentStore.load(file_path)
+            logger.info(f"Loaded FAISS document store from {file_path}")
+            return cls(document_store=document_store, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to load document store: {e}")
+            logger.info("Initializing new document store")
+            return cls(**kwargs)

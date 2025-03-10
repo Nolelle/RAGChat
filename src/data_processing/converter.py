@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 from typing import Optional
 import logging
+from haystack.components.converters import PDFToTextConverter
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ class DocumentConverter:
     def __init__(self):
         """Initialize the document converter."""
         self.supported_formats = {".txt", ".pdf"}
+        self.pdf_converter = PDFToTextConverter()
 
     def convert_text(self, text: str, source: str) -> str:
         """Convert raw text to cleaned format.
@@ -103,17 +105,9 @@ class DocumentConverter:
         Returns:
             Extracted and cleaned text content
         """
-        try:
-            import pdfplumber  # You'll need to add this to your dependencies
+        # Use Haystack's PDFToTextConverter
+        result = self.pdf_converter.run(file_paths=[str(file_path)])
 
-            text_content = []
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    extracted_text = page.extract_text() or ""
-                    text_content.append(extracted_text)
-
-            combined_text = "\n\n".join(text_content)
-            return self.convert_text(combined_text, file_path.name)
-        except ImportError:
-            logger.error("pdfplumber not installed. Add it to your dependencies.")
-            raise
+        # Combine all extracted texts
+        combined_text = "\n\n".join(result["texts"])
+        return self.convert_text(combined_text, file_path.name)

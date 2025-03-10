@@ -14,14 +14,14 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 # Import public interfaces
 from .types import TextChunk
 from .converter import DocumentConverter
-from .chunker import DocumentChunker
+from .chunker import HaystackChunker
 from .processor import DocumentProcessor
 from .haystack_processor import HaystackDocumentProcessor
 
 __all__ = [
     "TextChunk",
     "DocumentConverter",
-    "DocumentChunker",
+    "HaystackChunker",
     "DocumentProcessor",
     "HaystackDocumentProcessor",
 ]

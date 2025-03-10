@@ -1,32 +1,38 @@
-from typing import List, Optional
+from typing import List, Dict, Any
 import logging
-from transformers import AutoTokenizer
+from haystack.components.preprocessors import DocumentSplitter
+from haystack import Document
 from .types import TextChunk
 
 logger = logging.getLogger(__name__)
 
-class DocumentChunker:
-    """Splits documents into semantic chunks while preserving context."""
 
-    def __init__(self,
-                 chunk_size: int = 512,
-                 chunk_overlap: int = 50,
-                 model_name: str = "google/flan-t5-base"):
+class HaystackChunker:
+    """Splits documents into semantic chunks using Haystack's DocumentSplitter."""
+
+    def __init__(
+        self, chunk_size: int = 500, chunk_overlap: int = 50, split_by: str = "sentence"
+    ):
         """Initialize chunker with specified parameters.
 
         Args:
-            chunk_size: Maximum number of tokens per chunk
-            chunk_overlap: Number of overlapping tokens between chunks
-            model_name: Name of the model whose tokenizer to use
+            chunk_size: Maximum size of chunks in characters
+            chunk_overlap: Overlap between chunks in characters
+            split_by: Method to split text ('sentence', 'word', 'passage', or 'character')
         """
         if chunk_overlap >= chunk_size:
             raise ValueError("Chunk overlap must be less than chunk size")
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.split_by = split_by
 
-        logger.info(f"Initializing tokenizer with model: {model_name}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        logger.info(
+            f"Initializing Haystack chunker with size: {chunk_size}, overlap: {chunk_overlap}"
+        )
+        self.splitter = DocumentSplitter(
+            split_by=split_by, split_length=chunk_size, split_overlap=chunk_overlap
+        )
 
     def create_chunks(self, text: str, source_doc: str) -> List[TextChunk]:
         """Split text into overlapping chunks.
@@ -38,50 +44,28 @@ class DocumentChunker:
         Returns:
             List of TextChunk objects
         """
-        # Tokenize the text
-        tokens = self.tokenizer.encode(text, add_special_tokens=False)
+        # Create a Haystack Document
+        document = Document(content=text, meta={"source": source_doc})
 
+        # Split the document
+        result = self.splitter.run(documents=[document])
+        haystack_chunks = result["documents"]
+
+        # Convert Haystack Documents to TextChunk objects
         chunks = []
-        start_idx = 0
-
-        while start_idx < len(tokens):
-            # Calculate end index for current chunk
-            end_idx = min(start_idx + self.chunk_size, len(tokens))
-
-            # Get tokens for this chunk
-            chunk_tokens = tokens[start_idx:end_idx]
-
-            # Decode tokens back to text
-            chunk_text = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
-
-            # Clean up any leading/trailing whitespace
-            chunk_text = chunk_text.strip()
-
-            # Only create chunk if it contains text
-            if chunk_text:
-                chunk = TextChunk(
-                    text=chunk_text,
-                    start_idx=start_idx,
-                    end_idx=end_idx,
-                    source_doc=source_doc
-                )
-                chunks.append(chunk)
-
-                logger.debug(
-                    f"Created chunk {len(chunks)} from {source_doc}: "
-                    f"{len(chunk_tokens)} tokens"
-                )
-
-            # Move start index for next chunk, considering overlap
-            start_idx = end_idx - self.chunk_overlap
-
-            # If we're at the end and the remaining text is too small, stop
-            if len(tokens) - start_idx < self.chunk_size // 2:
-                break
+        for i, doc in enumerate(haystack_chunks):
+            # Use index positions as start/end since we don't have token positions
+            chunk = TextChunk(
+                text=doc.content,
+                start_idx=i,  # Using index as a proxy for position
+                end_idx=i + 1,  # Using index+1 as a proxy for end position
+                source_doc=source_doc,
+            )
+            chunks.append(chunk)
 
         logger.info(
             f"Split document {source_doc} into {len(chunks)} chunks "
-            f"(avg {sum(len(c.text) for c in chunks)/len(chunks):.1f} chars per chunk)"
+            f"(avg {sum(len(c.text) for c in chunks)/max(1, len(chunks)):.1f} chars per chunk)"
         )
 
         return chunks
@@ -100,9 +84,9 @@ class DocumentChunker:
 
         lengths = [len(chunk.text) for chunk in chunks]
         return {
-            'num_chunks': len(chunks),
-            'avg_length': sum(lengths) / len(lengths),
-            'min_length': min(lengths),
-            'max_length': max(lengths),
-            'total_length': sum(lengths)
+            "num_chunks": len(chunks),
+            "avg_length": sum(lengths) / len(lengths) if lengths else 0,
+            "min_length": min(lengths) if lengths else 0,
+            "max_length": max(lengths) if lengths else 0,
+            "total_length": sum(lengths),
         }
