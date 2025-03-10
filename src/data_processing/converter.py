@@ -2,7 +2,8 @@ from pathlib import Path
 import re
 from typing import Optional
 import logging
-from haystack.components.converters import PDFToTextConverter
+from haystack.components.converters import PyPDFToDocument
+from haystack import Document
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class DocumentConverter:
     def __init__(self):
         """Initialize the document converter."""
         self.supported_formats = {".txt", ".pdf"}
-        self.pdf_converter = PDFToTextConverter()
+        self.pdf_converter = PyPDFToDocument()
 
     def convert_text(self, text: str, source: str) -> str:
         """Convert raw text to cleaned format.
@@ -105,9 +106,13 @@ class DocumentConverter:
         Returns:
             Extracted and cleaned text content
         """
-        # Use Haystack's PDFToTextConverter
-        result = self.pdf_converter.run(file_paths=[str(file_path)])
+        # Use Haystack's PyPDFToDocument converter
+        result = self.pdf_converter.run(sources=[str(file_path)])
 
-        # Combine all extracted texts
-        combined_text = "\n\n".join(result["texts"])
+        # Extract text from Document objects
+        documents = result["documents"]
+        combined_text = "\n\n".join(
+            doc.content for doc in documents if isinstance(doc, Document)
+        )
+
         return self.convert_text(combined_text, file_path.name)
