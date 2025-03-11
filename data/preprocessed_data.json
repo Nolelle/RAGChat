@@ -1,0 +1,1608 @@
+[
+  {
+    "id": "ce193587162f7ae077132f7454ffc4e09cce546affb26f337b6e6156abaf4d98",
+    "content": "# First Responder Emergency Guide\n\n## Basic First Aid\n\n### CPR Protocol\n1. Check the scene for safety.\n2. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 0,
+      "split_idx_start": 0,
+      "_split_overlap": [
+        {
+          "doc_id": "a79ebc7855b0a3dbf9a034012d42563b332ce5c1ffc09880cfb50cfaf0e8aab8",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "a79ebc7855b0a3dbf9a034012d42563b332ce5c1ffc09880cfb50cfaf0e8aab8",
+    "content": "2. Check the person for responsiveness by tapping their shoulder and shouting \"Are you OK?\"\n3. If the person is unresponsive, call 911 or ask someone else to do so.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 1,
+      "split_idx_start": 103,
+      "_split_overlap": [
+        {
+          "doc_id": "ce193587162f7ae077132f7454ffc4e09cce546affb26f337b6e6156abaf4d98",
+          "range": [
+            103,
+            106
+          ]
+        },
+        {
+          "doc_id": "5576ba1d57de93efafc6a637da7d2884b76ac51fad75f960d63ebf90ba396a14",
+          "range": [
+            0,
+            70
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "5576ba1d57de93efafc6a637da7d2884b76ac51fad75f960d63ebf90ba396a14",
+    "content": "If the person is unresponsive, call 911 or ask someone else to do so.\n4. Check for breathing. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 2,
+      "split_idx_start": 198,
+      "_split_overlap": [
+        {
+          "doc_id": "a79ebc7855b0a3dbf9a034012d42563b332ce5c1ffc09880cfb50cfaf0e8aab8",
+          "range": [
+            95,
+            165
+          ]
+        },
+        {
+          "doc_id": "b49b06fc620008f8e786c0ba249a03f9723f98d597aef7e4f4db8bd259934ed4",
+          "range": [
+            0,
+            21
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "b49b06fc620008f8e786c0ba249a03f9723f98d597aef7e4f4db8bd259934ed4",
+    "content": "Check for breathing. If they are not breathing or only gasping, begin CPR.\n5. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 3,
+      "split_idx_start": 271,
+      "_split_overlap": [
+        {
+          "doc_id": "5576ba1d57de93efafc6a637da7d2884b76ac51fad75f960d63ebf90ba396a14",
+          "range": [
+            73,
+            94
+          ]
+        },
+        {
+          "doc_id": "93380178d46d7fcc5f7922e46b16bcf29ebdd6044b6a686ad9198a0353d6a80a",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "93380178d46d7fcc5f7922e46b16bcf29ebdd6044b6a686ad9198a0353d6a80a",
+    "content": "5. Place your hands on the center of the chest and perform 30 compressions.\n6. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 4,
+      "split_idx_start": 346,
+      "_split_overlap": [
+        {
+          "doc_id": "b49b06fc620008f8e786c0ba249a03f9723f98d597aef7e4f4db8bd259934ed4",
+          "range": [
+            75,
+            78
+          ]
+        },
+        {
+          "doc_id": "68d623809d13f26ff6e1f0077d9ed990e53420e88428d0814508996fdabdcdbd",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "68d623809d13f26ff6e1f0077d9ed990e53420e88428d0814508996fdabdcdbd",
+    "content": "6. Open the airway using the head-tilt, chin-lift method.\n7. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 5,
+      "split_idx_start": 422,
+      "_split_overlap": [
+        {
+          "doc_id": "93380178d46d7fcc5f7922e46b16bcf29ebdd6044b6a686ad9198a0353d6a80a",
+          "range": [
+            76,
+            79
+          ]
+        },
+        {
+          "doc_id": "455252db788bb27f4860ec2904b61bb3fae30dc6e896a13e128d793f1abebab4",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "455252db788bb27f4860ec2904b61bb3fae30dc6e896a13e128d793f1abebab4",
+    "content": "7. Give 2 rescue breaths, ensuring the chest rises.\n8. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 6,
+      "split_idx_start": 480,
+      "_split_overlap": [
+        {
+          "doc_id": "68d623809d13f26ff6e1f0077d9ed990e53420e88428d0814508996fdabdcdbd",
+          "range": [
+            58,
+            61
+          ]
+        },
+        {
+          "doc_id": "7fedcf97ad12b6f7635d8cc4317ea6662261cc168da7e97b22d635a9dbadad95",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "7fedcf97ad12b6f7635d8cc4317ea6662261cc168da7e97b22d635a9dbadad95",
+    "content": "8. Continue cycles of 30 compressions and 2 breaths until emergency services arrive.\n\n### Bleeding Control\n1. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 7,
+      "split_idx_start": 532,
+      "_split_overlap": [
+        {
+          "doc_id": "455252db788bb27f4860ec2904b61bb3fae30dc6e896a13e128d793f1abebab4",
+          "range": [
+            52,
+            55
+          ]
+        },
+        {
+          "doc_id": "95695f7122580362e05a6988fe3d94629d26ab124be0eff7c9c97493e55d9992",
+          "range": [
+            0,
+            24
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "95695f7122580362e05a6988fe3d94629d26ab124be0eff7c9c97493e55d9992",
+    "content": "### Bleeding Control\n1. Apply direct pressure to the wound using a clean cloth or bandage.\n2. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 8,
+      "split_idx_start": 618,
+      "_split_overlap": [
+        {
+          "doc_id": "7fedcf97ad12b6f7635d8cc4317ea6662261cc168da7e97b22d635a9dbadad95",
+          "range": [
+            86,
+            110
+          ]
+        },
+        {
+          "doc_id": "7ad8fd0a1816f6e922d928a1ce16d494d2c65dcb20c17de761171a917cfb7d52",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "7ad8fd0a1816f6e922d928a1ce16d494d2c65dcb20c17de761171a917cfb7d52",
+    "content": "2. If blood soaks through, add additional cloth without removing the original.\n3. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 9,
+      "split_idx_start": 709,
+      "_split_overlap": [
+        {
+          "doc_id": "95695f7122580362e05a6988fe3d94629d26ab124be0eff7c9c97493e55d9992",
+          "range": [
+            91,
+            94
+          ]
+        },
+        {
+          "doc_id": "d5b81d1dc67988e31d64deffd1d94e72b2607ac2772ea40f35d0e363542530e3",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "d5b81d1dc67988e31d64deffd1d94e72b2607ac2772ea40f35d0e363542530e3",
+    "content": "3. If possible, elevate the wounded area above the heart.\n4. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 10,
+      "split_idx_start": 788,
+      "_split_overlap": [
+        {
+          "doc_id": "7ad8fd0a1816f6e922d928a1ce16d494d2c65dcb20c17de761171a917cfb7d52",
+          "range": [
+            79,
+            82
+          ]
+        },
+        {
+          "doc_id": "ccac500bf6fec3c7ede57a2b7c47a16522ceefbc85874de32bcbfd26e735a3b0",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ccac500bf6fec3c7ede57a2b7c47a16522ceefbc85874de32bcbfd26e735a3b0",
+    "content": "4. For severe bleeding, apply a tourniquet if available.\n5. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 11,
+      "split_idx_start": 846,
+      "_split_overlap": [
+        {
+          "doc_id": "d5b81d1dc67988e31d64deffd1d94e72b2607ac2772ea40f35d0e363542530e3",
+          "range": [
+            58,
+            61
+          ]
+        },
+        {
+          "doc_id": "db6b1f28b81fd31066740f29fe396069ec639bead709931c37a41c0220287821",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "db6b1f28b81fd31066740f29fe396069ec639bead709931c37a41c0220287821",
+    "content": "5. Mark the time when the tourniquet was applied.\n\n## Fire Emergency Procedures\n\n### Building Fire Response\n1. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 12,
+      "split_idx_start": 903,
+      "_split_overlap": [
+        {
+          "doc_id": "ccac500bf6fec3c7ede57a2b7c47a16522ceefbc85874de32bcbfd26e735a3b0",
+          "range": [
+            57,
+            60
+          ]
+        },
+        {
+          "doc_id": "ec98e565d60f812e4c4f6726513d26b84daf1592b7d65eea845e04164e52a253",
+          "range": [
+            0,
+            60
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ec98e565d60f812e4c4f6726513d26b84daf1592b7d65eea845e04164e52a253",
+    "content": "## Fire Emergency Procedures\n\n### Building Fire Response\n1. Activate the nearest fire alarm.\n2. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 13,
+      "split_idx_start": 954,
+      "_split_overlap": [
+        {
+          "doc_id": "db6b1f28b81fd31066740f29fe396069ec639bead709931c37a41c0220287821",
+          "range": [
+            51,
+            111
+          ]
+        },
+        {
+          "doc_id": "a9e46ee635c3de56fc9dbd298b2fb06b0ef2e85b923085e0f1da1e4e749fec80",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "a9e46ee635c3de56fc9dbd298b2fb06b0ef2e85b923085e0f1da1e4e749fec80",
+    "content": "2. Call 911 and report the fire.\n3. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 14,
+      "split_idx_start": 1047,
+      "_split_overlap": [
+        {
+          "doc_id": "ec98e565d60f812e4c4f6726513d26b84daf1592b7d65eea845e04164e52a253",
+          "range": [
+            93,
+            96
+          ]
+        },
+        {
+          "doc_id": "ee9d6aef1a04ef115660dc922d39d849d72fe02601ef38b55f3ee8cd53609a94",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ee9d6aef1a04ef115660dc922d39d849d72fe02601ef38b55f3ee8cd53609a94",
+    "content": "3. If the fire is small and contained, use a fire extinguisher (PASS method: Pull, Aim, Squeeze, Sweep).\n4. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 15,
+      "split_idx_start": 1080,
+      "_split_overlap": [
+        {
+          "doc_id": "a9e46ee635c3de56fc9dbd298b2fb06b0ef2e85b923085e0f1da1e4e749fec80",
+          "range": [
+            33,
+            36
+          ]
+        },
+        {
+          "doc_id": "a4e0d0ed761685197c8130eebbbc8a3b30fe0b2a674b3fe1aed1fc896e0351a0",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "a4e0d0ed761685197c8130eebbbc8a3b30fe0b2a674b3fe1aed1fc896e0351a0",
+    "content": "4. If the fire is large or spreading, evacuate immediately.\n5. ",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 16,
+      "split_idx_start": 1185,
+      "_split_overlap": [
+        {
+          "doc_id": "ee9d6aef1a04ef115660dc922d39d849d72fe02601ef38b55f3ee8cd53609a94",
+          "range": [
+            105,
+            108
+          ]
+        },
+        {
+          "doc_id": "c603b86901f18969479f7e82771470208d4ee253010cc5b79b3338026945e427",
+          "range": [
+            0,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "c603b86901f18969479f7e82771470208d4ee253010cc5b79b3338026945e427",
+    "content": "5. Feel doors before opening. If hot, find another exit route.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 17,
+      "split_idx_start": 1245,
+      "_split_overlap": [
+        {
+          "doc_id": "a4e0d0ed761685197c8130eebbbc8a3b30fe0b2a674b3fe1aed1fc896e0351a0",
+          "range": [
+            60,
+            63
+          ]
+        },
+        {
+          "doc_id": "7488c3a60e45709a51690b8c4dd9aeb269a67e2d5166c16a0099c0b973e99a23",
+          "range": [
+            0,
+            33
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "7488c3a60e45709a51690b8c4dd9aeb269a67e2d5166c16a0099c0b973e99a23",
+    "content": "If hot, find another exit route.\n6. Stay low to avoid smoke inhalation.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 18,
+      "split_idx_start": 1275,
+      "_split_overlap": [
+        {
+          "doc_id": "c603b86901f18969479f7e82771470208d4ee253010cc5b79b3338026945e427",
+          "range": [
+            30,
+            63
+          ]
+        },
+        {
+          "doc_id": "5f811c5b4ef3f85386bb0aa2ff1802949c1f45d9dbabf47d8852ef1f4456e515",
+          "range": [
+            0,
+            36
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "5f811c5b4ef3f85386bb0aa2ff1802949c1f45d9dbabf47d8852ef1f4456e515",
+    "content": "Stay low to avoid smoke inhalation.\n7. Close doors behind you to contain the fire.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 19,
+      "split_idx_start": 1311,
+      "_split_overlap": [
+        {
+          "doc_id": "7488c3a60e45709a51690b8c4dd9aeb269a67e2d5166c16a0099c0b973e99a23",
+          "range": [
+            36,
+            72
+          ]
+        },
+        {
+          "doc_id": "c0ea8af0d74a1673f282348b1ec63df98cb2485092b465e2d325ac881bb26f9d",
+          "range": [
+            0,
+            44
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "c0ea8af0d74a1673f282348b1ec63df98cb2485092b465e2d325ac881bb26f9d",
+    "content": "Close doors behind you to contain the fire.\n8. Proceed to the designated assembly area.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 20,
+      "split_idx_start": 1350,
+      "_split_overlap": [
+        {
+          "doc_id": "5f811c5b4ef3f85386bb0aa2ff1802949c1f45d9dbabf47d8852ef1f4456e515",
+          "range": [
+            39,
+            83
+          ]
+        },
+        {
+          "doc_id": "3ee738ec3618a2669df4e608346c288b036f0babbd96f8badc05a8aafa438178",
+          "range": [
+            0,
+            42
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "3ee738ec3618a2669df4e608346c288b036f0babbd96f8badc05a8aafa438178",
+    "content": "Proceed to the designated assembly area.\n\n### Wildfire Response\n1. If ordered to evacuate, do so immediately.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 21,
+      "split_idx_start": 1397,
+      "_split_overlap": [
+        {
+          "doc_id": "c0ea8af0d74a1673f282348b1ec63df98cb2485092b465e2d325ac881bb26f9d",
+          "range": [
+            47,
+            89
+          ]
+        },
+        {
+          "doc_id": "77bf5c25af5448a906e906c1b148aee966905b89d1f0c9d6fe9f70e9f06ffb12",
+          "range": [
+            0,
+            43
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "77bf5c25af5448a906e906c1b148aee966905b89d1f0c9d6fe9f70e9f06ffb12",
+    "content": "If ordered to evacuate, do so immediately.\n2. Choose an evacuation route away from the fire.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 22,
+      "split_idx_start": 1464,
+      "_split_overlap": [
+        {
+          "doc_id": "3ee738ec3618a2669df4e608346c288b036f0babbd96f8badc05a8aafa438178",
+          "range": [
+            67,
+            110
+          ]
+        },
+        {
+          "doc_id": "3ee86132a03c14f6d45d040e92f39900bfeb40491f2302c74666a319f71a7778",
+          "range": [
+            0,
+            47
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "3ee86132a03c14f6d45d040e92f39900bfeb40491f2302c74666a319f71a7778",
+    "content": "Choose an evacuation route away from the fire.\n3. Take emergency supplies and important documents.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 23,
+      "split_idx_start": 1510,
+      "_split_overlap": [
+        {
+          "doc_id": "77bf5c25af5448a906e906c1b148aee966905b89d1f0c9d6fe9f70e9f06ffb12",
+          "range": [
+            46,
+            93
+          ]
+        },
+        {
+          "doc_id": "997bda88742a82ed27a93e7d1b22d2fde8df0d13223ea579f5c951fff1e1b117",
+          "range": [
+            0,
+            49
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "997bda88742a82ed27a93e7d1b22d2fde8df0d13223ea579f5c951fff1e1b117",
+    "content": "Take emergency supplies and important documents.\n4. If trapped, stay in an area with minimal vegetation.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 24,
+      "split_idx_start": 1560,
+      "_split_overlap": [
+        {
+          "doc_id": "3ee86132a03c14f6d45d040e92f39900bfeb40491f2302c74666a319f71a7778",
+          "range": [
+            50,
+            99
+          ]
+        },
+        {
+          "doc_id": "1aec140b64706912d1d2af5b6d3b8614a75aa56bdcdbcf551ca3751ee30b6048",
+          "range": [
+            0,
+            53
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "1aec140b64706912d1d2af5b6d3b8614a75aa56bdcdbcf551ca3751ee30b6048",
+    "content": "If trapped, stay in an area with minimal vegetation.\n5. Create a defensible space around structures.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 25,
+      "split_idx_start": 1612,
+      "_split_overlap": [
+        {
+          "doc_id": "997bda88742a82ed27a93e7d1b22d2fde8df0d13223ea579f5c951fff1e1b117",
+          "range": [
+            52,
+            105
+          ]
+        },
+        {
+          "doc_id": "bf30f2c7bbf5e8da6cc7781e1063d20ce5499a3f6d504297231659e5bc4fd1ec",
+          "range": [
+            0,
+            45
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "bf30f2c7bbf5e8da6cc7781e1063d20ce5499a3f6d504297231659e5bc4fd1ec",
+    "content": "Create a defensible space around structures.\n6. Wet down roofs and areas around buildings if possible.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 26,
+      "split_idx_start": 1668,
+      "_split_overlap": [
+        {
+          "doc_id": "1aec140b64706912d1d2af5b6d3b8614a75aa56bdcdbcf551ca3751ee30b6048",
+          "range": [
+            56,
+            101
+          ]
+        },
+        {
+          "doc_id": "d552efcadf27ff5d275272988ed9c0f39c92763d7437284f102012b0c247a201",
+          "range": [
+            0,
+            55
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "d552efcadf27ff5d275272988ed9c0f39c92763d7437284f102012b0c247a201",
+    "content": "Wet down roofs and areas around buildings if possible.\n7. Stay informed through emergency broadcasts.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 27,
+      "split_idx_start": 1716,
+      "_split_overlap": [
+        {
+          "doc_id": "bf30f2c7bbf5e8da6cc7781e1063d20ce5499a3f6d504297231659e5bc4fd1ec",
+          "range": [
+            48,
+            103
+          ]
+        },
+        {
+          "doc_id": "6b66d96cc289215a3a48b7f84186004fe011d5a47b3508a2ef564070439cb379",
+          "range": [
+            0,
+            45
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "6b66d96cc289215a3a48b7f84186004fe011d5a47b3508a2ef564070439cb379",
+    "content": "Stay informed through emergency broadcasts.\n\n## Natural Disaster Response\n\n### Earthquake Protocol\n1. Drop to the ground before the earthquake knocks you down.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 28,
+      "split_idx_start": 1774,
+      "_split_overlap": [
+        {
+          "doc_id": "d552efcadf27ff5d275272988ed9c0f39c92763d7437284f102012b0c247a201",
+          "range": [
+            58,
+            103
+          ]
+        },
+        {
+          "doc_id": "de17596c4453aca6b277e43542bbd711d5eb29f86904c47517e0ea4c47c5beef",
+          "range": [
+            0,
+            58
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "de17596c4453aca6b277e43542bbd711d5eb29f86904c47517e0ea4c47c5beef",
+    "content": "Drop to the ground before the earthquake knocks you down.\n2. Take cover under sturdy furniture or against an interior wall.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 29,
+      "split_idx_start": 1876,
+      "_split_overlap": [
+        {
+          "doc_id": "6b66d96cc289215a3a48b7f84186004fe011d5a47b3508a2ef564070439cb379",
+          "range": [
+            102,
+            160
+          ]
+        },
+        {
+          "doc_id": "35e55e39a3ed336a816acace262ea5b905347737b2d8de00e4dde81a8124d4af",
+          "range": [
+            0,
+            63
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "35e55e39a3ed336a816acace262ea5b905347737b2d8de00e4dde81a8124d4af",
+    "content": "Take cover under sturdy furniture or against an interior wall.\n3. Hold on until the shaking stops.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 30,
+      "split_idx_start": 1937,
+      "_split_overlap": [
+        {
+          "doc_id": "de17596c4453aca6b277e43542bbd711d5eb29f86904c47517e0ea4c47c5beef",
+          "range": [
+            61,
+            124
+          ]
+        },
+        {
+          "doc_id": "60dad5aeceeba930f50efc10194739e7c964ea65e066139f515e18027e5832af",
+          "range": [
+            0,
+            33
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "60dad5aeceeba930f50efc10194739e7c964ea65e066139f515e18027e5832af",
+    "content": "Hold on until the shaking stops.\n4. If outdoors, move to an open area away from structures and utilities.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 31,
+      "split_idx_start": 2003,
+      "_split_overlap": [
+        {
+          "doc_id": "35e55e39a3ed336a816acace262ea5b905347737b2d8de00e4dde81a8124d4af",
+          "range": [
+            66,
+            99
+          ]
+        },
+        {
+          "doc_id": "59d5ed5aa000debef0e7eb97f8bff78f2a4e70a681d5b3d78243068d809d13bf",
+          "range": [
+            0,
+            70
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "59d5ed5aa000debef0e7eb97f8bff78f2a4e70a681d5b3d78243068d809d13bf",
+    "content": "If outdoors, move to an open area away from structures and utilities.\n5. After shaking stops, check for injuries and damage.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 32,
+      "split_idx_start": 2039,
+      "_split_overlap": [
+        {
+          "doc_id": "60dad5aeceeba930f50efc10194739e7c964ea65e066139f515e18027e5832af",
+          "range": [
+            36,
+            106
+          ]
+        },
+        {
+          "doc_id": "4c1f8aa8eea13ff75d88df2f828043de3f261537ef66007403a991a315adc18c",
+          "range": [
+            0,
+            52
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "4c1f8aa8eea13ff75d88df2f828043de3f261537ef66007403a991a315adc18c",
+    "content": "After shaking stops, check for injuries and damage.\n6. Be prepared for aftershocks.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 33,
+      "split_idx_start": 2112,
+      "_split_overlap": [
+        {
+          "doc_id": "59d5ed5aa000debef0e7eb97f8bff78f2a4e70a681d5b3d78243068d809d13bf",
+          "range": [
+            73,
+            125
+          ]
+        },
+        {
+          "doc_id": "149137758e5551e8400b0a0ceebef23537724f9e6810febe249fb62a65ee3261",
+          "range": [
+            0,
+            30
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "149137758e5551e8400b0a0ceebef23537724f9e6810febe249fb62a65ee3261",
+    "content": "Be prepared for aftershocks.\n\n### Flood Response\n1. Move to higher ground immediately.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 34,
+      "split_idx_start": 2167,
+      "_split_overlap": [
+        {
+          "doc_id": "4c1f8aa8eea13ff75d88df2f828043de3f261537ef66007403a991a315adc18c",
+          "range": [
+            55,
+            85
+          ]
+        },
+        {
+          "doc_id": "95720474d1bf093d21a4a3a1ebf1e8ec288b66dc5a55909a5dcf2d96e6989185",
+          "range": [
+            0,
+            35
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "95720474d1bf093d21a4a3a1ebf1e8ec288b66dc5a55909a5dcf2d96e6989185",
+    "content": "Move to higher ground immediately.\n2. Avoid walking or driving through floodwaters.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 35,
+      "split_idx_start": 2219,
+      "_split_overlap": [
+        {
+          "doc_id": "149137758e5551e8400b0a0ceebef23537724f9e6810febe249fb62a65ee3261",
+          "range": [
+            52,
+            87
+          ]
+        },
+        {
+          "doc_id": "ccdcb973b8de41bbae1f73054c4dbf707ca653d5c317e1cd9a1102b4b86b4c04",
+          "range": [
+            0,
+            46
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ccdcb973b8de41bbae1f73054c4dbf707ca653d5c317e1cd9a1102b4b86b4c04",
+    "content": "Avoid walking or driving through floodwaters.\n3. If trapped in a building, go to the highest level (not the attic).\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 36,
+      "split_idx_start": 2257,
+      "_split_overlap": [
+        {
+          "doc_id": "95720474d1bf093d21a4a3a1ebf1e8ec288b66dc5a55909a5dcf2d96e6989185",
+          "range": [
+            38,
+            84
+          ]
+        },
+        {
+          "doc_id": "0655e650cd285b3cf7dded4ac0a2c24fbf766b46914cad50446d41999ff89d1c",
+          "range": [
+            0,
+            67
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0655e650cd285b3cf7dded4ac0a2c24fbf766b46914cad50446d41999ff89d1c",
+    "content": "If trapped in a building, go to the highest level (not the attic).\n4. If trapped in a vehicle in rising water, abandon the vehicle for higher ground.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 37,
+      "split_idx_start": 2306,
+      "_split_overlap": [
+        {
+          "doc_id": "ccdcb973b8de41bbae1f73054c4dbf707ca653d5c317e1cd9a1102b4b86b4c04",
+          "range": [
+            49,
+            116
+          ]
+        },
+        {
+          "doc_id": "2d4192c8df5dade02f0ab8d6f3d198cdabe4d0d0ed6441757bf9566f0ed4e7f4",
+          "range": [
+            0,
+            80
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "2d4192c8df5dade02f0ab8d6f3d198cdabe4d0d0ed6441757bf9566f0ed4e7f4",
+    "content": "If trapped in a vehicle in rising water, abandon the vehicle for higher ground.\n5. Listen to emergency services for evacuation orders.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 38,
+      "split_idx_start": 2376,
+      "_split_overlap": [
+        {
+          "doc_id": "0655e650cd285b3cf7dded4ac0a2c24fbf766b46914cad50446d41999ff89d1c",
+          "range": [
+            70,
+            150
+          ]
+        },
+        {
+          "doc_id": "a72c2c0026aa92d9d2a62dc99a18d32b94d5e519a8fd593170bba944d250a63a",
+          "range": [
+            0,
+            53
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "a72c2c0026aa92d9d2a62dc99a18d32b94d5e519a8fd593170bba944d250a63a",
+    "content": "Listen to emergency services for evacuation orders.\n\n## Medical Emergencies\n\n### Heart Attack Signs and Response\n1. Recognize symptoms: chest pain/pressure, shortness of breath, pain in arms/back/jaw.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 39,
+      "split_idx_start": 2459,
+      "_split_overlap": [
+        {
+          "doc_id": "2d4192c8df5dade02f0ab8d6f3d198cdabe4d0d0ed6441757bf9566f0ed4e7f4",
+          "range": [
+            83,
+            136
+          ]
+        },
+        {
+          "doc_id": "e127d50e528f7e473857b29fd3f0b1c7c81803ef460ee97bb23fa513b7871350",
+          "range": [
+            0,
+            85
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "e127d50e528f7e473857b29fd3f0b1c7c81803ef460ee97bb23fa513b7871350",
+    "content": "Recognize symptoms: chest pain/pressure, shortness of breath, pain in arms/back/jaw.\n2. Call 911 immediately.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 40,
+      "split_idx_start": 2575,
+      "_split_overlap": [
+        {
+          "doc_id": "a72c2c0026aa92d9d2a62dc99a18d32b94d5e519a8fd593170bba944d250a63a",
+          "range": [
+            116,
+            201
+          ]
+        },
+        {
+          "doc_id": "b25d724747456d063f98a45f652a349a04ef2391f6159a0cb138917b35defcf3",
+          "range": [
+            0,
+            22
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "b25d724747456d063f98a45f652a349a04ef2391f6159a0cb138917b35defcf3",
+    "content": "Call 911 immediately.\n3. Have the person rest in a comfortable position.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 41,
+      "split_idx_start": 2663,
+      "_split_overlap": [
+        {
+          "doc_id": "e127d50e528f7e473857b29fd3f0b1c7c81803ef460ee97bb23fa513b7871350",
+          "range": [
+            88,
+            110
+          ]
+        },
+        {
+          "doc_id": "06826178b67d408a99f545c511365fc8f04e199beb41a3b6e372b3ff7bc67689",
+          "range": [
+            0,
+            48
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "06826178b67d408a99f545c511365fc8f04e199beb41a3b6e372b3ff7bc67689",
+    "content": "Have the person rest in a comfortable position.\n4. Offer aspirin if available and not contraindicated.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 42,
+      "split_idx_start": 2688,
+      "_split_overlap": [
+        {
+          "doc_id": "b25d724747456d063f98a45f652a349a04ef2391f6159a0cb138917b35defcf3",
+          "range": [
+            25,
+            73
+          ]
+        },
+        {
+          "doc_id": "d281fd8c72dd0744ca0108644beb07d93a92befef5e909c9c07828e5de557cdf",
+          "range": [
+            0,
+            52
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "d281fd8c72dd0744ca0108644beb07d93a92befef5e909c9c07828e5de557cdf",
+    "content": "Offer aspirin if available and not contraindicated.\n5. Be prepared to perform CPR if the person becomes unresponsive.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 43,
+      "split_idx_start": 2739,
+      "_split_overlap": [
+        {
+          "doc_id": "06826178b67d408a99f545c511365fc8f04e199beb41a3b6e372b3ff7bc67689",
+          "range": [
+            51,
+            103
+          ]
+        },
+        {
+          "doc_id": "6016d1003186d8ee1f475a2ee60ce1e40976eeea632268ee86b6494ad6f03f65",
+          "range": [
+            0,
+            64
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "6016d1003186d8ee1f475a2ee60ce1e40976eeea632268ee86b6494ad6f03f65",
+    "content": "Be prepared to perform CPR if the person becomes unresponsive.\n\n### Stroke Recognition (FAST)\n- Face drooping\n- Arm weakness\n- Speech difficulty\n- Time to call emergency services\n\n### Choking Response\n1. Ask \"Are you choking?\" If the person nods yes and cannot speak, take action.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 44,
+      "split_idx_start": 2794,
+      "_split_overlap": [
+        {
+          "doc_id": "d281fd8c72dd0744ca0108644beb07d93a92befef5e909c9c07828e5de557cdf",
+          "range": [
+            55,
+            119
+          ]
+        },
+        {
+          "doc_id": "645aacf16edeeea86d5c2c2a904de3085d5de19e9a64601fe63bf3b3a98838b7",
+          "range": [
+            0,
+            77
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "645aacf16edeeea86d5c2c2a904de3085d5de19e9a64601fe63bf3b3a98838b7",
+    "content": "Ask \"Are you choking?\" If the person nods yes and cannot speak, take action.\n2. Stand behind the person and place one foot slightly in front of the other for balance.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 45,
+      "split_idx_start": 2998,
+      "_split_overlap": [
+        {
+          "doc_id": "6016d1003186d8ee1f475a2ee60ce1e40976eeea632268ee86b6494ad6f03f65",
+          "range": [
+            204,
+            281
+          ]
+        },
+        {
+          "doc_id": "ca0b360845611de42b827cf3f85cd36105bbe81c7fde082ae926be866af605ee",
+          "range": [
+            0,
+            87
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ca0b360845611de42b827cf3f85cd36105bbe81c7fde082ae926be866af605ee",
+    "content": "Stand behind the person and place one foot slightly in front of the other for balance.\n3. Wrap your arms around the waist.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 46,
+      "split_idx_start": 3078,
+      "_split_overlap": [
+        {
+          "doc_id": "645aacf16edeeea86d5c2c2a904de3085d5de19e9a64601fe63bf3b3a98838b7",
+          "range": [
+            80,
+            167
+          ]
+        },
+        {
+          "doc_id": "5e4e26aaa9b49de84b36d1873c708380dba1cf01c443c62bc0b1d70ed1c2f6e3",
+          "range": [
+            0,
+            33
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "5e4e26aaa9b49de84b36d1873c708380dba1cf01c443c62bc0b1d70ed1c2f6e3",
+    "content": "Wrap your arms around the waist.\n4. Make a fist with one hand and place it above the navel.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 47,
+      "split_idx_start": 3168,
+      "_split_overlap": [
+        {
+          "doc_id": "ca0b360845611de42b827cf3f85cd36105bbe81c7fde082ae926be866af605ee",
+          "range": [
+            90,
+            123
+          ]
+        },
+        {
+          "doc_id": "beec1f38b655f38318c370488bedbcfed00d2fe503156713ab3b3cae00272f50",
+          "range": [
+            0,
+            56
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "beec1f38b655f38318c370488bedbcfed00d2fe503156713ab3b3cae00272f50",
+    "content": "Make a fist with one hand and place it above the navel.\n5. Grasp your fist with the other hand and press inward and upward with quick thrusts.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 48,
+      "split_idx_start": 3204,
+      "_split_overlap": [
+        {
+          "doc_id": "5e4e26aaa9b49de84b36d1873c708380dba1cf01c443c62bc0b1d70ed1c2f6e3",
+          "range": [
+            36,
+            92
+          ]
+        },
+        {
+          "doc_id": "d978d34542b269119b2b2d06b20f9a8a1e63f980a3d05b4daf4e3b6ebbdae792",
+          "range": [
+            0,
+            84
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "d978d34542b269119b2b2d06b20f9a8a1e63f980a3d05b4daf4e3b6ebbdae792",
+    "content": "Grasp your fist with the other hand and press inward and upward with quick thrusts.\n6. Continue until the object is expelled or the person becomes unresponsive.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 49,
+      "split_idx_start": 3263,
+      "_split_overlap": [
+        {
+          "doc_id": "beec1f38b655f38318c370488bedbcfed00d2fe503156713ab3b3cae00272f50",
+          "range": [
+            59,
+            143
+          ]
+        },
+        {
+          "doc_id": "875f4a205edaa85b17ed7045bfd3283a299314cc21a4ca695e6b6b97661cb8ad",
+          "range": [
+            0,
+            75
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "875f4a205edaa85b17ed7045bfd3283a299314cc21a4ca695e6b6b97661cb8ad",
+    "content": "Continue until the object is expelled or the person becomes unresponsive.\n\n## Hazardous Materials Incidents\n\n### Initial Response\n1. Identify the hazardous material if possible without exposure.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 50,
+      "split_idx_start": 3350,
+      "_split_overlap": [
+        {
+          "doc_id": "d978d34542b269119b2b2d06b20f9a8a1e63f980a3d05b4daf4e3b6ebbdae792",
+          "range": [
+            87,
+            162
+          ]
+        },
+        {
+          "doc_id": "623de27a2f088615a62f0d8b093cf7ee8faa0ff04b57608f79fdda8731c1fd4b",
+          "range": [
+            0,
+            62
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "623de27a2f088615a62f0d8b093cf7ee8faa0ff04b57608f79fdda8731c1fd4b",
+    "content": "Identify the hazardous material if possible without exposure.\n2. Secure the area and keep people away.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 51,
+      "split_idx_start": 3483,
+      "_split_overlap": [
+        {
+          "doc_id": "875f4a205edaa85b17ed7045bfd3283a299314cc21a4ca695e6b6b97661cb8ad",
+          "range": [
+            133,
+            195
+          ]
+        },
+        {
+          "doc_id": "debb37d4544d5a20f22761c1a468630ab6aad306bb2b8fcdc113b6d0ef15c521",
+          "range": [
+            0,
+            38
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "debb37d4544d5a20f22761c1a468630ab6aad306bb2b8fcdc113b6d0ef15c521",
+    "content": "Secure the area and keep people away.\n3. Call specialized HAZMAT teams.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 52,
+      "split_idx_start": 3548,
+      "_split_overlap": [
+        {
+          "doc_id": "623de27a2f088615a62f0d8b093cf7ee8faa0ff04b57608f79fdda8731c1fd4b",
+          "range": [
+            65,
+            103
+          ]
+        },
+        {
+          "doc_id": "826813fb13795170bf83b108bf916b4bf81a4736a219361f9476aaadbcac040f",
+          "range": [
+            0,
+            31
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "826813fb13795170bf83b108bf916b4bf81a4736a219361f9476aaadbcac040f",
+    "content": "Call specialized HAZMAT teams.\n4. Approach from upwind and uphill.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 53,
+      "split_idx_start": 3589,
+      "_split_overlap": [
+        {
+          "doc_id": "debb37d4544d5a20f22761c1a468630ab6aad306bb2b8fcdc113b6d0ef15c521",
+          "range": [
+            41,
+            72
+          ]
+        },
+        {
+          "doc_id": "ac9a4abe2681c27dc176350b5284fb5b0bf2359887ec5924e6a6d98793cf8602",
+          "range": [
+            0,
+            33
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "ac9a4abe2681c27dc176350b5284fb5b0bf2359887ec5924e6a6d98793cf8602",
+    "content": "Approach from upwind and uphill.\n5. Do not touch or walk through spilled material.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 54,
+      "split_idx_start": 3623,
+      "_split_overlap": [
+        {
+          "doc_id": "826813fb13795170bf83b108bf916b4bf81a4736a219361f9476aaadbcac040f",
+          "range": [
+            34,
+            67
+          ]
+        },
+        {
+          "doc_id": "931dd3527a732c3af01a9a428ff2bd11ace3465d4f29c8eb8ca5b5e318c44cc4",
+          "range": [
+            0,
+            47
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "931dd3527a732c3af01a9a428ff2bd11ace3465d4f29c8eb8ca5b5e318c44cc4",
+    "content": "Do not touch or walk through spilled material.\n6. Avoid inhalation of fumes, smoke, or vapors.\n\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 55,
+      "split_idx_start": 3659,
+      "_split_overlap": [
+        {
+          "doc_id": "ac9a4abe2681c27dc176350b5284fb5b0bf2359887ec5924e6a6d98793cf8602",
+          "range": [
+            36,
+            83
+          ]
+        },
+        {
+          "doc_id": "9c58d0c3ed617fdea2e42280680d4094410f4733dbddd6bb809a96904a7b3265",
+          "range": [
+            0,
+            46
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "9c58d0c3ed617fdea2e42280680d4094410f4733dbddd6bb809a96904a7b3265",
+    "content": "Avoid inhalation of fumes, smoke, or vapors.\n\n### Decontamination Basics\n1. Remove contaminated clothing.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 56,
+      "split_idx_start": 3709,
+      "_split_overlap": [
+        {
+          "doc_id": "931dd3527a732c3af01a9a428ff2bd11ace3465d4f29c8eb8ca5b5e318c44cc4",
+          "range": [
+            50,
+            96
+          ]
+        },
+        {
+          "doc_id": "b29ed21982d336fb3db8ed78ac5f188a5040b2a608711726eb6af578596e8192",
+          "range": [
+            0,
+            30
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "b29ed21982d336fb3db8ed78ac5f188a5040b2a608711726eb6af578596e8192",
+    "content": "Remove contaminated clothing.\n2. Rinse with water for at least 15 minutes.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 57,
+      "split_idx_start": 3785,
+      "_split_overlap": [
+        {
+          "doc_id": "9c58d0c3ed617fdea2e42280680d4094410f4733dbddd6bb809a96904a7b3265",
+          "range": [
+            76,
+            106
+          ]
+        },
+        {
+          "doc_id": "a87169118c3077de4386331b0f7477bdd040a17b0191a19000d652f297b65c3e",
+          "range": [
+            0,
+            42
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "a87169118c3077de4386331b0f7477bdd040a17b0191a19000d652f297b65c3e",
+    "content": "Rinse with water for at least 15 minutes.\n3. Wash with mild soap if available.\n",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 58,
+      "split_idx_start": 3818,
+      "_split_overlap": [
+        {
+          "doc_id": "b29ed21982d336fb3db8ed78ac5f188a5040b2a608711726eb6af578596e8192",
+          "range": [
+            33,
+            75
+          ]
+        },
+        {
+          "doc_id": "b674064229badf78b9c9a89ed37b853a6b39ccc4d5693922ca55b116fb2ca240",
+          "range": [
+            0,
+            34
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "b674064229badf78b9c9a89ed37b853a6b39ccc4d5693922ca55b116fb2ca240",
+    "content": "Wash with mild soap if available.\n4. Seek medical attention after initial decontamination.",
+    "meta": {
+      "file_path": "sample_first_responder_guide.txt",
+      "source_id": "146a967b23a0b1d792db049283a6aef49aa7a427c88d46df4e596d5f21c74778",
+      "page_number": 1,
+      "split_id": 59,
+      "split_idx_start": 3863,
+      "_split_overlap": [
+        {
+          "doc_id": "a87169118c3077de4386331b0f7477bdd040a17b0191a19000d652f297b65c3e",
+          "range": [
+            45,
+            79
+          ]
+        }
+      ]
+    }
+  }
+]

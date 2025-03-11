@@ -1,0 +1,238 @@
+[
+  {
+    "input": "question: What is the protocol for first responder emergency guide?",
+    "target": "# First Responder Emergency Guide\n\n## Basic First Aid\n\n### CPR Protocol\n1. Check the scene for safety.\n2. "
+  },
+  {
+    "input": "question: What's the best way to respond to 2?",
+    "target": "2. Check the person for responsiveness by tapping their shoulder and shouting \"Are you OK?\"\n3. If the person is unresponsive, call 911 or ask someone else to do so.\n"
+  },
+  {
+    "input": "question: What should I do if if the person is unresponsive, call 911 or ask someone else to do so?",
+    "target": "If the person is unresponsive, call 911 or ask someone else to do so.\n4. Check for breathing. "
+  },
+  {
+    "input": "question: How should first responders deal with check for breathing?",
+    "target": "Check for breathing. If they are not breathing or only gasping, begin CPR.\n5. "
+  },
+  {
+    "input": "question: Can you explain how to 5?",
+    "target": "5. Place your hands on the center of the chest and perform 30 compressions.\n6. "
+  },
+  {
+    "input": "question: How do I handle a situation where open the airway using the head-tilt, chin-lift method?",
+    "target": "6. Open the airway using the head-tilt, chin-lift method.\n7. "
+  },
+  {
+    "input": "question: As a first responder, what should I know about 7?",
+    "target": "7. Give 2 rescue breaths, ensuring the chest rises.\n8. "
+  },
+  {
+    "input": "question: What is the proper procedure for bleeding control?",
+    "target": "8. Continue cycles of 30 compressions and 2 breaths until emergency services arrive.\n\n### Bleeding Control\n1. "
+  },
+  {
+    "input": "question: What's the best way to respond to bleeding control?",
+    "target": "### Bleeding Control\n1. Apply direct pressure to the wound using a clean cloth or bandage.\n2. "
+  },
+  {
+    "input": "question: What is the protocol for 2?",
+    "target": "2. If blood soaks through, add additional cloth without removing the original.\n3. "
+  },
+  {
+    "input": "question: How do I handle a situation where 3?",
+    "target": "3. If possible, elevate the wounded area above the heart.\n4. "
+  },
+  {
+    "input": "question: How do I handle a situation where 4?",
+    "target": "4. For severe bleeding, apply a tourniquet if available.\n5. "
+  },
+  {
+    "input": "question: What are the steps for fire emergency procedures?",
+    "target": "5. Mark the time when the tourniquet was applied.\n\n## Fire Emergency Procedures\n\n### Building Fire Response\n1. "
+  },
+  {
+    "input": "question: What should I do if fire emergency procedures?",
+    "target": "## Fire Emergency Procedures\n\n### Building Fire Response\n1. Activate the nearest fire alarm.\n2. "
+  },
+  {
+    "input": "question: What should I do if if the fire is small and contained, use a fire extinguisher (pass method: pull, aim, squeeze, sweep)?",
+    "target": "3. If the fire is small and contained, use a fire extinguisher (PASS method: Pull, Aim, Squeeze, Sweep).\n4. "
+  },
+  {
+    "input": "question: How should first responders deal with 4?",
+    "target": "4. If the fire is large or spreading, evacuate immediately.\n5. "
+  },
+  {
+    "input": "question: As a first responder, what should I know about 5?",
+    "target": "5. Feel doors before opening. If hot, find another exit route.\n"
+  },
+  {
+    "input": "question: How should first responders deal with if hot, find another exit route?",
+    "target": "If hot, find another exit route.\n6. Stay low to avoid smoke inhalation.\n"
+  },
+  {
+    "input": "question: What's the best way to respond to stay low to avoid smoke inhalation?",
+    "target": "Stay low to avoid smoke inhalation.\n7. Close doors behind you to contain the fire.\n"
+  },
+  {
+    "input": "question: What is the proper procedure for close doors behind you to contain the fire?",
+    "target": "Close doors behind you to contain the fire.\n8. Proceed to the designated assembly area.\n\n"
+  },
+  {
+    "input": "question: How do I handle a situation where wildfire response?",
+    "target": "Proceed to the designated assembly area.\n\n### Wildfire Response\n1. If ordered to evacuate, do so immediately.\n"
+  },
+  {
+    "input": "question: Can you explain how to if ordered to evacuate, do so immediately?",
+    "target": "If ordered to evacuate, do so immediately.\n2. Choose an evacuation route away from the fire.\n"
+  },
+  {
+    "input": "question: Can you explain how to take emergency supplies and important documents?",
+    "target": "Choose an evacuation route away from the fire.\n3. Take emergency supplies and important documents.\n"
+  },
+  {
+    "input": "question: What are the steps for take emergency supplies and important documents?",
+    "target": "Take emergency supplies and important documents.\n4. If trapped, stay in an area with minimal vegetation.\n"
+  },
+  {
+    "input": "question: What are the steps for if trapped, stay in an area with minimal vegetation?",
+    "target": "If trapped, stay in an area with minimal vegetation.\n5. Create a defensible space around structures.\n"
+  },
+  {
+    "input": "question: How would you manage create a defensible space around structures?",
+    "target": "Create a defensible space around structures.\n6. Wet down roofs and areas around buildings if possible.\n"
+  },
+  {
+    "input": "question: What are the steps for stay informed through emergency broadcasts?",
+    "target": "Wet down roofs and areas around buildings if possible.\n7. Stay informed through emergency broadcasts.\n\n"
+  },
+  {
+    "input": "question: What's the best way to respond to natural disaster response?",
+    "target": "Stay informed through emergency broadcasts.\n\n## Natural Disaster Response\n\n### Earthquake Protocol\n1. Drop to the ground before the earthquake knocks you down.\n"
+  },
+  {
+    "input": "question: How should first responders deal with drop to the ground before the earthquake knocks you down?",
+    "target": "Drop to the ground before the earthquake knocks you down.\n2. Take cover under sturdy furniture or against an interior wall.\n"
+  },
+  {
+    "input": "question: As a first responder, what should I know about take cover under sturdy furniture or against an interior wall?",
+    "target": "Take cover under sturdy furniture or against an interior wall.\n3. Hold on until the shaking stops.\n"
+  },
+  {
+    "input": "question: How should first responders deal with hold on until the shaking stops?",
+    "target": "Hold on until the shaking stops.\n4. If outdoors, move to an open area away from structures and utilities.\n"
+  },
+  {
+    "input": "question: What's the best way to respond to if outdoors, move to an open area away from structures and utilities?",
+    "target": "If outdoors, move to an open area away from structures and utilities.\n5. After shaking stops, check for injuries and damage.\n"
+  },
+  {
+    "input": "question: What is the protocol for after shaking stops, check for injuries and damage?",
+    "target": "After shaking stops, check for injuries and damage.\n6. Be prepared for aftershocks.\n\n"
+  },
+  {
+    "input": "question: What are the steps for flood response?",
+    "target": "Be prepared for aftershocks.\n\n### Flood Response\n1. Move to higher ground immediately.\n"
+  },
+  {
+    "input": "question: What is the protocol for move to higher ground immediately?",
+    "target": "Move to higher ground immediately.\n2. Avoid walking or driving through floodwaters.\n"
+  },
+  {
+    "input": "question: How should first responders deal with avoid walking or driving through floodwaters?",
+    "target": "Avoid walking or driving through floodwaters.\n3. If trapped in a building, go to the highest level (not the attic).\n"
+  },
+  {
+    "input": "question: What is the protocol for if trapped in a building, go to the highest level (not the attic)?",
+    "target": "If trapped in a building, go to the highest level (not the attic).\n4. If trapped in a vehicle in rising water, abandon the vehicle for higher ground.\n"
+  },
+  {
+    "input": "question: What should I do if listen to emergency services for evacuation orders?",
+    "target": "If trapped in a vehicle in rising water, abandon the vehicle for higher ground.\n5. Listen to emergency services for evacuation orders.\n\n"
+  },
+  {
+    "input": "question: What is the proper procedure for medical emergencies?",
+    "target": "Listen to emergency services for evacuation orders.\n\n## Medical Emergencies\n\n### Heart Attack Signs and Response\n1. Recognize symptoms: chest pain/pressure, shortness of breath, pain in arms/back/jaw.\n"
+  },
+  {
+    "input": "question: How should first responders deal with recognize symptoms: chest pain/pressure, shortness of breath, pain in arms/back/jaw?",
+    "target": "Recognize symptoms: chest pain/pressure, shortness of breath, pain in arms/back/jaw.\n2. Call 911 immediately.\n"
+  },
+  {
+    "input": "question: What is the protocol for call 911 immediately?",
+    "target": "Call 911 immediately.\n3. Have the person rest in a comfortable position.\n"
+  },
+  {
+    "input": "question: How should first responders deal with have the person rest in a comfortable position?",
+    "target": "Have the person rest in a comfortable position.\n4. Offer aspirin if available and not contraindicated.\n"
+  },
+  {
+    "input": "question: What is the protocol for offer aspirin if available and not contraindicated?",
+    "target": "Offer aspirin if available and not contraindicated.\n5. Be prepared to perform CPR if the person becomes unresponsive.\n\n"
+  },
+  {
+    "input": "question: What is the proper procedure for stroke recognition (fast)?",
+    "target": "Be prepared to perform CPR if the person becomes unresponsive.\n\n### Stroke Recognition (FAST)\n- Face drooping\n- Arm weakness\n- Speech difficulty\n- Time to call emergency services\n\n### Choking Response\n1. Ask \"Are you choking?\" If the person nods yes and cannot speak, take action.\n"
+  },
+  {
+    "input": "question: What should I do if \" if the person nods yes and cannot speak, take action?",
+    "target": "Ask \"Are you choking?\" If the person nods yes and cannot speak, take action.\n2. Stand behind the person and place one foot slightly in front of the other for balance.\n"
+  },
+  {
+    "input": "question: How should first responders deal with stand behind the person and place one foot slightly in front of the other for balance?",
+    "target": "Stand behind the person and place one foot slightly in front of the other for balance.\n3. Wrap your arms around the waist.\n"
+  },
+  {
+    "input": "question: What are the steps for wrap your arms around the waist?",
+    "target": "Wrap your arms around the waist.\n4. Make a fist with one hand and place it above the navel.\n"
+  },
+  {
+    "input": "question: What is the proper procedure for make a fist with one hand and place it above the navel?",
+    "target": "Make a fist with one hand and place it above the navel.\n5. Grasp your fist with the other hand and press inward and upward with quick thrusts.\n"
+  },
+  {
+    "input": "question: As a first responder, what should I know about grasp your fist with the other hand and press inward and upward with quick thrusts?",
+    "target": "Grasp your fist with the other hand and press inward and upward with quick thrusts.\n6. Continue until the object is expelled or the person becomes unresponsive.\n\n"
+  },
+  {
+    "input": "question: How should first responders deal with hazardous materials incidents?",
+    "target": "Continue until the object is expelled or the person becomes unresponsive.\n\n## Hazardous Materials Incidents\n\n### Initial Response\n1. Identify the hazardous material if possible without exposure.\n"
+  },
+  {
+    "input": "question: What is the protocol for identify the hazardous material if possible without exposure?",
+    "target": "Identify the hazardous material if possible without exposure.\n2. Secure the area and keep people away.\n"
+  },
+  {
+    "input": "question: What's the best way to respond to secure the area and keep people away?",
+    "target": "Secure the area and keep people away.\n3. Call specialized HAZMAT teams.\n"
+  },
+  {
+    "input": "question: How do I handle a situation where call specialized hazmat teams?",
+    "target": "Call specialized HAZMAT teams.\n4. Approach from upwind and uphill.\n"
+  },
+  {
+    "input": "question: How would you manage approach from upwind and uphill?",
+    "target": "Approach from upwind and uphill.\n5. Do not touch or walk through spilled material.\n"
+  },
+  {
+    "input": "question: As a first responder, what should I know about do not touch or walk through spilled material?",
+    "target": "Do not touch or walk through spilled material.\n6. Avoid inhalation of fumes, smoke, or vapors.\n\n"
+  },
+  {
+    "input": "question: As a first responder, what should I know about decontamination basics?",
+    "target": "Avoid inhalation of fumes, smoke, or vapors.\n\n### Decontamination Basics\n1. Remove contaminated clothing.\n"
+  },
+  {
+    "input": "question: How would you manage remove contaminated clothing?",
+    "target": "Remove contaminated clothing.\n2. Rinse with water for at least 15 minutes.\n"
+  },
+  {
+    "input": "question: What is the protocol for rinse with water for at least 15 minutes?",
+    "target": "Rinse with water for at least 15 minutes.\n3. Wash with mild soap if available.\n"
+  },
+  {
+    "input": "question: What is the proper procedure for wash with mild soap if available?",
+    "target": "Wash with mild soap if available.\n4. Seek medical attention after initial decontamination."
+  }
+]

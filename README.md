@@ -1,165 +1,150 @@
-# First Responder RAG Chatbot
+# FirstRespondersChatbot
 
-A specialized chatbot system that helps firefighters, EMTs, and other first responders quickly access critical information from procedure manuals, protocols, and training materials using Retrieval-Augmented Generation (RAG).
+A Retrieval-Augmented Generation (RAG) chatbot for first responders using Haystack 2.0 and fine-tuned Flan-T5-Small.
 
-## Features
+## Project Overview
 
-The system provides real-time, context-aware responses by combining document retrieval with AI-powered text generation:
+This project implements a specialized chatbot system for first responders, designed to provide accurate and contextual information for emergency scenarios. The system is built in three phases:
 
-- **Intelligent Query Response**: Delivers accurate answers using official manuals, SOPs, and documentation
-- **Dynamic Knowledge Base**: Supports PDF and text file uploads for expanding the system's knowledge
-- **Real-time Information Access**: Uses RAG to retrieve relevant information chunks from stored documents
-- **User-friendly Interface**: Offers both CLI and web-based interfaces for easy interaction
-- **Scalable Architecture**: Designed to grow with additional domains and evolving guidelines
+1. **Phase 1**: Document preprocessing and model fine-tuning
+2. **Phase 2**: Command-line interface for querying the fine-tuned model
+3. **Phase 3**: Full RAG system with a React frontend for file uploads and contextual queries
 
-## Technical Architecture
+## Setup and Installation
 
-### Core Components
+### Prerequisites
 
-The system is built using modern AI and information retrieval technologies:
+- Python 3.12 or later
+- pip or another Python package manager
+- Node.js and npm (for Phase 3 - React frontend)
 
-- **Document Processing**: Converts and chunks documents while preserving semantic context
-- **Embedding System**: Generates high-quality vector representations using instructor-xl (768 dimensions)
-- **Vector Store**: Uses FAISS for efficient similarity search and retrieval
-- **Generation Model**: Leverages flan-t5-base for coherent response generation
-- **Web Interface**: Built with Gradio for intuitive interaction
-
-### Project Structure
-
-```
-chatbot-rag-firefight/
-├── pyproject.toml          # Project metadata and dependencies
-├── src/                    # Source code directory
-│   ├── data_processing/   # Document handling and preprocessing
-│   ├── model/            # RAG model implementation
-│   ├── retrieval/        # Vector storage and search
-│   ├── cli/             # Command-line interface
-│   └── web/             # Web interface (Gradio app)
-├── data/                 # Data directory (git-ignored)
-│   ├── raw/             # Original documents
-│   ├── processed/       # Processed text chunks
-│   └── embeddings/      # Stored document embeddings
-├── tests/               # Test suite
-└── README.md            # Project documentation
-```
-
-## System Requirements and Performance
-
-### Hardware Requirements
-The system is optimized for local development on macOS with:
-- Apple M1/M2 series processor or equivalent
-- Minimum 16GB RAM recommended
-- At least 256GB available SSD storage
-- macOS Monterey or newer
-
-### Performance Targets
-The system is designed for efficient local processing:
-
-- Query Response Time: < 3 seconds total
-  - Embedding generation: < 200ms
-  - Vector search: < 100ms
-  - Response generation: < 2.5 seconds
-- Document Processing: < 5 seconds per page
-- Peak Memory Usage: < 4GB
-- Storage Usage: < 1GB per 500 pages of documents
-
-For detailed technical specifications, including optimization strategies, monitoring setup, and development configurations, see our [Technical Documentation](docs/TECHNICAL.md).
-
-## Getting Started
+### Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/chatbot-rag-firefight.git
-   cd chatbot-rag-firefight
+   git clone [repository-url]
+   cd FirstRespondersChatbot
    ```
 
-2. Create and activate a virtual environment:
+2. Set up a virtual environment (recommended):
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. Install dependencies:
+3. Install the required dependencies:
    ```bash
-   pip install -e ".[dev]"  # Includes development dependencies
+   pip install .  # For minimal installation
+   pip install .[web]  # For web-related dependencies (Phase 3)
+   pip install .[dev]  # For development dependencies
    ```
 
-4. Create required data directories:
-   ```bash
-   mkdir -p data/{raw,processed,embeddings}
-   ```
+## Phase 1: Document Preprocessing and Model Fine-Tuning
 
-5. Run initial tests:
-   ```bash
-   pytest
-   ```
+### Prepare Documents
 
-## Using the CLI
+Place your first responder document files (PDF, TXT, MD) in the `docs/` directory. These will be used for preprocessing and model fine-tuning.
 
-The system includes a command-line interface powered by Haystack for document processing and querying:
+### Run the Preprocessing Script
 
-### Processing Documents
-
-To process a single document:
 ```bash
-python main.py process-document path/to/your/document.pdf
+python preprocess.py
 ```
 
-To process all documents in a directory:
+This script will:
+- Convert documents into text
+- Split them into meaningful chunks
+- Save the processed data to `data/preprocessed_data.json`
+
+### Create the Training Dataset
+
 ```bash
-python main.py process-directory path/to/your/documents/
+python create_dataset.py
 ```
 
-### Searching for Information
+This script will:
+- Take the preprocessed chunks
+- Generate question-answer pairs for fine-tuning
+- Save the dataset to `data/pseudo_data.json`
 
-To query the knowledge base:
+### Fine-tune the Model
+
 ```bash
-python main.py query "What is the procedure for handling a hazardous materials incident?"
+python train.py
 ```
 
-### Interactive Chat Mode
+This script will:
+- Load the Flan-T5-Small model
+- Fine-tune it on the generated dataset
+- Automatically detect and use available hardware (NVIDIA GPU or Apple Silicon)
+- Save the fine-tuned model to `flan-t5-first-responder/`
 
-For continuous interaction with the knowledge base:
+## Phase 2: CLI Interface
+
+After fine-tuning, you can use the CLI to interact with the model:
+
 ```bash
-python main.py chat
+python cli.py
 ```
 
-## Development
+This provides a command-line interface to ask questions and get responses from your fine-tuned model.
 
-The project uses modern Python tools and practices:
+## Phase 3: RAG System with Web Interface
 
-- **Python Version**: 3.12+
-- **Code Style**: Black formatter and Ruff linter
-- **Testing**: Pytest with coverage reporting
-- **Documentation**: Sphinx with ReadTheDocs theme
-- **Type Hints**: Comprehensive typing throughout
+### Start the Server
 
-### Installing Optional Dependencies
-
-For web interface development:
 ```bash
-pip install -e ".[web]"
+python server.py
 ```
 
-For documentation building:
+This will start a Flask server that handles:
+- File uploads for the RAG system
+- Queries from the frontend
+- Responses generated with contextual information
+
+### Use the React Frontend
+
+Navigate to the React app directory and start the development server:
+
 ```bash
-pip install -e ".[docs]"
+cd rag-frontend
+npm install
+npm start
 ```
 
-## Testing
+The web interface allows users to:
+- Upload PDF and text files
+- Ask questions
+- Receive answers generated using relevant context from the uploaded documents
 
-The project includes comprehensive test coverage:
+## Project Structure
 
-- **Unit Tests**: Component-level accuracy validation
-- **Integration Tests**: End-to-end pipeline verification
-- **Performance Tests**: Response time and resource usage benchmarks
-- **Validation Tests**: Real-world usage scenarios
-
-Run the full test suite:
-```bash
-pytest --cov=src tests/
+```
+FirstRespondersChatbot/
+├── docs/                  # Raw document files
+├── uploads/               # Temporary storage for user uploads
+├── flan-t5-first-responder/ # Fine-tuned model storage
+├── data/                  # Processed data and datasets
+├── preprocess.py          # Document preprocessing script
+├── create_dataset.py      # Dataset creation script
+├── train.py               # Model fine-tuning script
+├── cli.py                 # Command-line interface
+├── rag_backend.py         # RAG system backend
+├── server.py              # Flask server
+├── rag-frontend/          # React frontend
+│   └── src/
+│       ├── App.js
+│       └── (other React files)
+└── pyproject.toml         # Project dependencies and configuration
 ```
 
 ## License
 
-[Your License Here]
+[Your chosen license]
+
+## Acknowledgements
+
+This project utilizes several open-source libraries:
+- Haystack 2.0 for information retrieval
+- Hugging Face Transformers for the Flan-T5 model
+- Flask and React for the web interface
