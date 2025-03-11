@@ -32,6 +32,9 @@ data/
 !data/processed/.gitkeep
 !data/models/.gitkeep
 
+data/
+flan-t5-first-responder/
+
 # FAISS indexes and vector stores
 *.index
 *.faiss

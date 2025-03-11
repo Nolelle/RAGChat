@@ -1,0 +1,100 @@
+Questions from Emergency Medical Responder: First on Scene (11th Edition)
+Multiple-Choice Questions
+What is the primary legal basis for an Emergency Medical Responder (EMR) to provide care to an unresponsive patient without explicit consent?
+A. Expressed consent
+B. Informed consent
+C. Implied consent
+D. Emancipated minor consent
+Answer: C
+Which of the following is NOT a required element for a claim of negligence against an EMR?
+A. Duty to act
+B. Breach of duty
+C. Abandonment
+D. Damages
+Answer: C
+According to the text, what should an EMR do if a competent adult refuses care?
+A. Restrain the patient to provide care
+B. Leave the scene immediately
+C. Attempt to gain the patient’s trust and document the refusal
+D. Call law enforcement to force treatment
+Answer: C
+What does a Do Not Resuscitate (DNR) order indicate?
+A. The patient refuses all medical care
+B. The patient does not wish to prolong life through resuscitative efforts
+C. The patient requires immediate CPR
+D. The patient has appointed a health care representative
+Answer: B
+Which of the following situations allows an EMR to share patient information without written authorization?
+A. Discussing the case with friends
+B. Providing details to the press
+C. Sharing with other health care providers involved in the patient’s care
+D. Posting about it on social media
+Answer: C
+True/False Questions
+True or False: An EMR can legally force care on a competent adult who refuses treatment.**
+Answer: False
+True or False: Good Samaritan laws may protect an EMR from civil liability if they act in good faith within their training.**
+Answer: True
+True or False: A parent or legal guardian can refuse care for a child, and the EMR must respect this decision without further action.**
+Answer: False (The EMR may need to report the incident if it jeopardizes the child’s welfare, per state laws.)
+Short-Answer Questions
+What are the four key pieces of information an EMR must provide to a patient to obtain informed consent?
+Answer:
+The EMR’s level of training
+Why care may be necessary
+What care is planned
+Any consequences related to providing or refusing care
+Describe the steps an EMR should take when documenting a patient’s refusal of care.
+Answer:
+Stay calm and explain the situation and potential dangers of refusal.
+Identify the patient’s reasons for refusal.
+Use a trusted person to convince the patient if possible.
+Document the offer of help, explanation of training, need for care, consequences of refusal, and the patient’s refusal.
+Have the patient sign a release form if available, with a witness signature.
+Questions from Firefighter Personal Protective Equipment (Chapter 6)
+Multiple-Choice Questions
+What is the primary purpose of personal protective equipment (PPE) for firefighters?
+A. To enhance visibility
+B. To protect from hazards and minimize injury or fatality
+C. To provide comfort during operations
+D. To identify rank and unit
+Answer: B
+Which NFPA standard governs the requirements for structural fire fighting protective clothing?
+A. NFPA 1500
+B. NFPA 1971
+C. NFPA 1981
+D. NFPA 1977
+Answer: B
+What is a limitation of structural fire fighting protective clothing mentioned in the text?
+A. It does not protect against heat
+B. It traps body heat and moisture, increasing physiological stress
+C. It is too lightweight for structural fires
+D. It lacks a moisture barrier
+Answer: B
+Which type of respiratory protection equipment is designed to supply clean air from an uncontaminated source?
+A. Air-purifying respirators (APR)
+B. Powered air-purifying respirators (PAPR)
+C. Self-contained breathing apparatus (SCBA)
+D. Supplied-air respirators (SAR)
+Answer: C
+How often must fully wrapped fiberglass SCBA cylinders be hydrostatically tested?
+A. Every year
+B. Every three years
+C. Every five years
+D. Every ten years
+Answer: B
+True/False Questions
+True or False: Hearing protection devices are required by NFPA 1971 for structural fire fighting.**
+Answer: False (Required by NFPA 1500, not 1971)
+True or False: A firefighter can safely fill an unshielded SCBA cylinder while wearing it during routine operations.**
+Answer: False (Prohibited unless specific RIC/UAC criteria are met in emergencies.)
+True or False: The PASS device alarm must be at least 95 decibels and activate if a firefighter is motionless for 30 seconds.**
+Answer: True
+Short-Answer Questions
+List three safety precautions a firefighter should follow when refilling an SCBA cylinder.
+Answer:
+Check the hydrostatic test date of the cylinder.
+Visually inspect the cylinder for damage.
+Fill the cylinder slowly to prevent overheating.
+Explain the purpose of the buddy system as a nonemergency exit technique in an IDLH atmosphere.
+Answer: The buddy system ensures firefighters work in teams of at least two, maintaining physical, voice, or visual contact to monitor each other’s safety. If an exit indicator occurs (e.g., low air alarm), team members exit together, preventing anyone from being left alone in a hazardous area.

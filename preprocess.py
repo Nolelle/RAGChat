@@ -35,13 +35,8 @@ def preprocess_documents() -> List[Document]:
     Returns:
         List[Document]: List of processed and split documents.
     """
-    # Create output directory if it doesn’t exist
+    # Create output directory if it doesn't exist
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # Initialize components
-    pdf_converter = PyPDFToDocument()
-    text_converter = TextFileToDocument()
-    splitter = DocumentSplitter(split_by="sentence", split_length=3, split_overlap=1)
 
     all_documents = []
 
@@ -50,6 +45,13 @@ def preprocess_documents() -> List[Document]:
         if file_path.is_file():
             logger.info(f"Processing file: {file_path}")
             try:
+                # Create new component instances for each file
+                pdf_converter = PyPDFToDocument()
+                text_converter = TextFileToDocument()
+                splitter = DocumentSplitter(
+                    split_by="sentence", split_length=3, split_overlap=1
+                )
+
                 # Create a pipeline for each file
                 pipeline = Pipeline()
                 pipeline.add_component("splitter", splitter)

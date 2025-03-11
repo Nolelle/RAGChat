@@ -46,8 +46,8 @@ MODEL_NAME = "google/flan-t5-small"  # Small model for faster training
 MAX_INPUT_LENGTH = 512
 MAX_TARGET_LENGTH = 512
 BATCH_SIZE = 8
-EPOCHS = 3
-LEARNING_RATE = 5e-5
+EPOCHS = 10
+LEARNING_RATE = 3e-5
 
 
 def detect_hardware():
@@ -104,10 +104,8 @@ def load_dataset() -> Dataset:
     # Split dataset into train and validation sets (90% / 10%)
     split_dataset = dataset.train_test_split(test_size=0.1)
 
-    # Rename 'test' split to 'validation' for clarity
-    split_dataset = DatasetDict(
-        {"train": split_dataset["train"], "validation": split_dataset["test"]}
-    )
+    logger.info(f"Training set: {len(dataset['train'])} examples")
+    logger.info(f"Validation set: {len(dataset['test'])} examples")
 
     logger.info(f"Training set: {len(split_dataset['train'])} examples")
     logger.info(f"Validation set: {len(split_dataset['validation'])} examples")
@@ -191,7 +189,7 @@ def train_model(dataset, device):
         model=model,
         args=training_args,
         train_dataset=tokenized_dataset["train"],
-        eval_dataset=tokenized_dataset["validation"],
+        eval_dataset=tokenized_dataset["test"],
         tokenizer=tokenizer,
         data_collator=data_collator,
     )
@@ -230,7 +228,14 @@ def main():
     # Test the model with a sample question
     test_question = "question: What is the protocol for CPR?"
     input_ids = tokenizer(test_question, return_tensors="pt").input_ids.to(device)
-    outputs = model.generate(input_ids, max_length=100)
+    outputs = model.generate(
+        input_ids,
+        max_length=100,
+        num_beams=4,  # Use beam search for better quality
+        temperature=0.7,  # Add some randomness but not too much
+        no_repeat_ngram_size=2,  # Avoid repetition
+        early_stopping=True,
+    )
     answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     logger.info("----- Sample Model Output -----")
