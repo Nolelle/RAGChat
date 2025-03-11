@@ -108,6 +108,7 @@ htmlcov/
 coverage.xml
 
 # Documentation
+docs/
 docs/_build/
 site/
 
