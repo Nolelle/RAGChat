@@ -3,8 +3,7 @@
 Script to run the CLI.
 """
 
-import sys
-from src.firstresponders_chatbot.cli.cli import get_cli
+from .cli import get_cli
 
 app = get_cli()
 

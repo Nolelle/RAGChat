@@ -1,150 +1,138 @@
 # FirstRespondersChatbot
 
-A Retrieval-Augmented Generation (RAG) chatbot for first responders using Haystack 2.0 and fine-tuned Flan-T5-Small.
+A chatbot system for first responders using Retrieval-Augmented Generation (RAG) to provide accurate information about emergency procedures and protocols.
 
 ## Project Overview
 
-This project implements a specialized chatbot system for first responders, designed to provide accurate and contextual information for emergency scenarios. The system is built in three phases:
+The FirstRespondersChatbot is designed to assist first responders by providing quick and accurate information about emergency procedures, protocols, and best practices. The system uses a combination of:
 
-1. **Phase 1**: Document preprocessing and model fine-tuning
-2. **Phase 2**: Command-line interface for querying the fine-tuned model
-3. **Phase 3**: Full RAG system with a React frontend for file uploads and contextual queries
+1. **Fine-tuned Language Model**: A Flan-T5 model fine-tuned on first responder documentation
+2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
 
-## Setup and Installation
+## Features
+
+- **Document Processing**: Upload and process PDF, TXT, and MD files containing first responder information
+- **Natural Language Queries**: Ask questions in natural language about emergency procedures
+- **Context-Aware Responses**: Get responses that include citations to the source documents
+- **Multiple Interfaces**:
+  - Command-line interface (CLI) for direct interaction
+  - REST API server for integration with web applications
+  - Web UI (coming soon)
+
+## Installation
 
 ### Prerequisites
 
-- Python 3.12 or later
-- pip or another Python package manager
-- Node.js and npm (for Phase 3 - React frontend)
+- Python 3.9+
+- pip
 
-### Installation
+### Setup
 
 1. Clone the repository:
+
    ```bash
-   git clone [repository-url]
-   cd FirstRespondersChatbot
+   git clone https://github.com/yourusername/firstresponders-chatbot.git
+   cd firstresponders-chatbot
    ```
 
-2. Set up a virtual environment (recommended):
+2. Install dependencies:
+
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -e .
    ```
 
-3. Install the required dependencies:
+3. (Optional) Download the pre-trained model:
+
    ```bash
-   pip install .  # For minimal installation
-   pip install .[web]  # For web-related dependencies (Phase 3)
-   pip install .[dev]  # For development dependencies
+   # Instructions for downloading pre-trained model will be provided
    ```
 
-## Phase 1: Document Preprocessing and Model Fine-Tuning
+## Usage
 
-### Prepare Documents
+### Command-Line Interface
 
-Place your first responder document files (PDF, TXT, MD) in the `docs/` directory. These will be used for preprocessing and model fine-tuning.
-
-### Run the Preprocessing Script
-
-```bash
-python preprocess.py
-```
-
-This script will:
-- Convert documents into text
-- Split them into meaningful chunks
-- Save the processed data to `data/preprocessed_data.json`
-
-### Create the Training Dataset
-
-```bash
-python create_dataset.py
-```
-
-This script will:
-- Take the preprocessed chunks
-- Generate question-answer pairs for fine-tuning
-- Save the dataset to `data/pseudo_data.json`
-
-### Fine-tune the Model
-
-```bash
-python train.py
-```
-
-This script will:
-- Load the Flan-T5-Small model
-- Fine-tune it on the generated dataset
-- Automatically detect and use available hardware (NVIDIA GPU or Apple Silicon)
-- Save the fine-tuned model to `flan-t5-first-responder/`
-
-## Phase 2: CLI Interface
-
-After fine-tuning, you can use the CLI to interact with the model:
+To start an interactive chat session:
 
 ```bash
 python cli.py
 ```
 
-This provides a command-line interface to ask questions and get responses from your fine-tuned model.
-
-## Phase 3: RAG System with Web Interface
-
-### Start the Server
+To ask a single question:
 
 ```bash
-python server.py
+python cli.py "What is the protocol for CPR?"
 ```
 
-This will start a Flask server that handles:
-- File uploads for the RAG system
-- Queries from the frontend
-- Responses generated with contextual information
+### Document Processing
 
-### Use the React Frontend
-
-Navigate to the React app directory and start the development server:
+To preprocess documents:
 
 ```bash
-cd rag-frontend
-npm install
-npm start
+python preprocess.py --docs-dir ./docs --output-dir ./data
 ```
 
-The web interface allows users to:
-- Upload PDF and text files
-- Ask questions
-- Receive answers generated using relevant context from the uploaded documents
+### Dataset Creation
+
+To create a training dataset:
+
+```bash
+python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
+```
+
+### Model Training
+
+To train the model:
+
+```bash
+python train.py
+```
+
+### Server
+
+To start the REST API server:
+
+```bash
+python server.py --host 0.0.0.0 --port 8000
+```
+
+## API Documentation
+
+The REST API provides the following endpoints:
+
+- `GET /api/health`: Health check endpoint
+- `POST /api/upload`: Upload a document file
+- `POST /api/query`: Query the RAG system
+- `POST /api/clear`: Clear the document index
+- `GET /api/files`: Get a list of indexed files
 
 ## Project Structure
 
 ```
-FirstRespondersChatbot/
-├── docs/                  # Raw document files
-├── uploads/               # Temporary storage for user uploads
-├── flan-t5-first-responder/ # Fine-tuned model storage
-├── data/                  # Processed data and datasets
-├── preprocess.py          # Document preprocessing script
-├── create_dataset.py      # Dataset creation script
-├── train.py               # Model fine-tuning script
-├── cli.py                 # Command-line interface
-├── rag_backend.py         # RAG system backend
-├── server.py              # Flask server
-├── rag-frontend/          # React frontend
-│   └── src/
-│       ├── App.js
-│       └── (other React files)
-└── pyproject.toml         # Project dependencies and configuration
+firstresponders-chatbot/
+├── src/
+│   └── firstresponders_chatbot/
+│       ├── cli/              # Command-line interface
+│       ├── preprocessing/    # Document preprocessing
+│       ├── rag/              # RAG system
+│       └── training/         # Model training
+├── data/                     # Data storage
+├── docs/                     # Documentation and example files
+├── uploads/                  # Uploaded files
+├── cli.py                    # CLI entry point
+├── server.py                 # Server entry point
+├── preprocess.py             # Preprocessing entry point
+├── create_dataset.py         # Dataset creation entry point
+├── train.py                  # Training entry point
+├── main.py                   # Main entry point
+└── pyproject.toml            # Dependencies
 ```
 
 ## License
 
-[Your chosen license]
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgements
+## Acknowledgments
 
-This project utilizes several open-source libraries:
-- Haystack 2.0 for information retrieval
-- Hugging Face Transformers for the Flan-T5 model
-- Flask and React for the web interface
+- Hugging Face for the Transformers library
+- Haystack for the RAG components
+- All contributors to the project
