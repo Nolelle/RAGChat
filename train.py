@@ -18,7 +18,7 @@ from typing import Dict, List, Any
 
 import numpy as np
 import torch
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -30,6 +30,11 @@ from transformers import (
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Set the Hugging Face cache directory to D drive
+os.environ["TRANSFORMERS_CACHE"] = "D:/SAIT/winter_2025/emergin_trends/RAGChat/hf_cache"
+os.environ["HF_HOME"] = "D:/SAIT/winter_2025/emergin_trends/RAGChat/hf_cache"
+logger.info(f"Setting Hugging Face cache to: {os.environ['TRANSFORMERS_CACHE']}")
 
 # File paths
 DATA_DIR = Path("data")
@@ -97,12 +102,17 @@ def load_dataset() -> Dataset:
     logger.info(f"Loaded dataset with {len(dataset)} examples")
 
     # Split dataset into train and validation sets (90% / 10%)
-    dataset = dataset.train_test_split(test_size=0.1)
+    split_dataset = dataset.train_test_split(test_size=0.1)
 
-    logger.info(f"Training set: {len(dataset['train'])} examples")
-    logger.info(f"Validation set: {len(dataset['validation'])} examples")
+    # Rename 'test' split to 'validation' for clarity
+    split_dataset = DatasetDict(
+        {"train": split_dataset["train"], "validation": split_dataset["test"]}
+    )
 
-    return dataset
+    logger.info(f"Training set: {len(split_dataset['train'])} examples")
+    logger.info(f"Validation set: {len(split_dataset['validation'])} examples")
+
+    return split_dataset
 
 
 def preprocess_function(examples, tokenizer):
@@ -135,10 +145,14 @@ def train_model(dataset, device):
     Returns:
         tuple: (trained model, tokenizer)
     """
+    # Create cache directory if it doesn't exist
+    cache_dir = os.environ["TRANSFORMERS_CACHE"]
+    os.makedirs(cache_dir, exist_ok=True)
+
     # Load model and tokenizer
     logger.info(f"Loading model {MODEL_NAME}...")
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, cache_dir=cache_dir)
 
     # Move model to device
     model = model.to(device)

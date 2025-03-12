@@ -26,9 +26,8 @@ wheels/
 *.egg
 
 # Project-specific data and models
-data/raw/*
-data/processed/*
-data/models/*
+data/
+!data/.gitkeep
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/models/.gitkeep
@@ -114,3 +113,7 @@ site/
 
 # Keep important empty directories
 !.gitkeep
+
+# Hugging Face cache
+hf_cache/
+.hf_cache/
