@@ -4,7 +4,7 @@ Script to create a dataset for training the FirstRespondersChatbot.
 """
 
 import sys
-from src.firstresponders_chatbot.preprocessing.dataset_creator import DatasetCreator
+from src.firstresponders_chatbot.training.dataset_creator import DatasetCreator
 
 
 def main():
