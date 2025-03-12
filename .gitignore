@@ -120,3 +120,45 @@ site/
 # Hugging Face cache
 hf_cache/
 .hf_cache/
+
+# User uploads
+uploads/
+!uploads/.gitkeep
+
+# Haystack 2.0 specific
+document_stores/
+pipeline_caches/
+haystack_cache/
+haystack_logs/
+
+# Frontend specific
+rag-frontend/node_modules/
+rag-frontend/build/
+rag-frontend/dist/
+rag-frontend/.next/
+rag-frontend/out/
+rag-frontend/.nuxt/
+rag-frontend/.cache/
+rag-frontend/public/build/
+rag-frontend/.env.local
+rag-frontend/.env.development.local
+rag-frontend/.env.test.local
+rag-frontend/.env.production.local
+rag-frontend/npm-debug.log*
+rag-frontend/yarn-debug.log*
+rag-frontend/yarn-error.log*
+
+# Large language model files
+*.gguf
+*.ggml
+*.pt
+*.bin
+*.safetensors
+# But don't ignore small model config files
+!config.json
+!tokenizer_config.json
+!special_tokens_map.json
+
+# Temporary experiment files
+experiments/
+runs/
