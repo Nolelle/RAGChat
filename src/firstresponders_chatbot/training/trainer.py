@@ -7,9 +7,10 @@ import os
 import logging
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import torch
+import numpy as np
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -18,6 +19,7 @@ from transformers import (
     DataCollatorForSeq2Seq,
 )
 from datasets import Dataset, load_dataset
+import evaluate  # Import evaluate package for metrics
 
 # Correct import for Haystack 2.0
 from haystack.components.generators import HuggingFaceAPIGenerator
@@ -38,11 +40,15 @@ class ModelTrainer:
         model_name: str = "google/flan-t5-small",
         dataset_path: str = "data/pseudo_data.json",
         output_dir: str = "flan-t5-first-responder",
-        batch_size: int = 8,
+        batch_size: int = 2,
         learning_rate: float = 5e-5,
-        num_train_epochs: int = 3,
-        max_source_length: int = 512,
-        max_target_length: int = 128,
+        num_train_epochs: int = 5,
+        max_source_length: int = 384,
+        max_target_length: int = 96,
+        weight_decay: float = 0.01,
+        warmup_ratio: float = 0.1,
+        gradient_accumulation_steps: int = 16,
+        fp16: bool = True,
     ):
         """
         Initialize the ModelTrainer.
@@ -56,6 +62,10 @@ class ModelTrainer:
             num_train_epochs: Number of epochs to train for
             max_source_length: Maximum length of the source sequences
             max_target_length: Maximum length of the target sequences
+            weight_decay: Weight decay for regularization
+            warmup_ratio: Ratio of total training steps used for learning rate warmup
+            gradient_accumulation_steps: Number of steps to accumulate gradients before performing an update
+            fp16: Whether to use mixed precision training
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -65,6 +75,10 @@ class ModelTrainer:
         self.num_train_epochs = num_train_epochs
         self.max_source_length = max_source_length
         self.max_target_length = max_target_length
+        self.weight_decay = weight_decay
+        self.warmup_ratio = warmup_ratio
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.fp16 = fp16
 
         # Check if CUDA is available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -218,6 +232,80 @@ class ModelTrainer:
         model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
+        # Load ROUGE metric for evaluation
+        rouge_metric = evaluate.load("rouge")
+
+        # Define compute metrics function
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+
+            try:
+                # Filter out extremely large token IDs that might cause overflow
+                max_token_id = tokenizer.vocab_size
+
+                # Ensure preds doesn't have token IDs out of range
+                if isinstance(preds, np.ndarray):
+                    preds = np.where(
+                        preds < max_token_id, preds, tokenizer.pad_token_id
+                    )
+                else:
+                    # If it's a tensor
+                    preds = torch.where(
+                        preds < max_token_id,
+                        preds,
+                        torch.tensor(tokenizer.pad_token_id, device=preds.device),
+                    )
+
+                # Decode generated summaries
+                decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+
+                # Replace -100 in the labels as we can't decode them
+                labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+                # Also filter large token IDs in labels
+                labels = np.where(labels < max_token_id, labels, tokenizer.pad_token_id)
+                decoded_labels = tokenizer.batch_decode(
+                    labels, skip_special_tokens=True
+                )
+
+                # ROUGE expects newlines after each sentence
+                decoded_preds = ["\n".join(pred.split()) for pred in decoded_preds]
+                decoded_labels = ["\n".join(label.split()) for label in decoded_labels]
+
+                # Compute ROUGE scores
+                result = rouge_metric.compute(
+                    predictions=decoded_preds,
+                    references=decoded_labels,
+                    use_stemmer=True,
+                )
+
+                # Extract ROUGE f1 scores
+                result = {
+                    key: value.mid.fmeasure * 100 for key, value in result.items()
+                }
+
+                # Add mean generated length
+                prediction_lens = [len(pred.split()) for pred in decoded_preds]
+                result["gen_len"] = np.mean(prediction_lens)
+
+                return {k: round(v, 4) for k, v in result.items()}
+
+            except OverflowError as e:
+                logger.error(f"OverflowError in compute_metrics: {e}")
+                # Return a default metric value if decoding fails
+                return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "gen_len": 0.0}
+            except Exception as e:
+                logger.error(f"Error in compute_metrics: {e}")
+                # Return a default metric value if something else goes wrong
+                return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "gen_len": 0.0}
+
+        # Check if fp16 is supported on the current device
+        use_fp16 = self.fp16
+        if self.device.type != "cuda":
+            logger.warning(
+                f"fp16 is not supported on {self.device.type} devices. Disabling fp16."
+            )
+            use_fp16 = False
+
         # Define training arguments
         training_args = Seq2SeqTrainingArguments(
             output_dir=self.output_dir,
@@ -233,6 +321,16 @@ class ModelTrainer:
             load_best_model_at_end=True,
             metric_for_best_model="loss",
             greater_is_better=False,
+            weight_decay=self.weight_decay,
+            warmup_ratio=self.warmup_ratio,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            fp16=use_fp16,
+            predict_with_generate=True,
+            generation_max_length=self.max_target_length,
+            report_to="tensorboard",
+            # Memory optimization
+            dataloader_pin_memory=False,  # Disable pinned memory to reduce memory usage
+            optim="adamw_torch",  # Use the PyTorch optimizer implementation
         )
 
         # Create data collator
@@ -251,6 +349,7 @@ class ModelTrainer:
             eval_dataset=eval_dataset,  # Add evaluation dataset
             data_collator=data_collator,
             tokenizer=tokenizer,
+            compute_metrics=compute_metrics,  # Add compute_metrics function
         )
 
         # Train the model
