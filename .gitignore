@@ -32,8 +32,11 @@ data/
 !data/processed/.gitkeep
 !data/models/.gitkeep
 
-data/
+# Model directories
 flan-t5-first-responder/
+flan-t5-base-first-responder/
+*-first-responder/
+checkpoint-*/
 
 # FAISS indexes and vector stores
 *.index
@@ -120,6 +123,8 @@ site/
 # Hugging Face cache
 hf_cache/
 .hf_cache/
+.cache/
+.huggingface/
 
 # User uploads
 uploads/
@@ -132,21 +137,21 @@ haystack_cache/
 haystack_logs/
 
 # Frontend specific
-rag-frontend/node_modules/
-rag-frontend/build/
-rag-frontend/dist/
-rag-frontend/.next/
-rag-frontend/out/
-rag-frontend/.nuxt/
-rag-frontend/.cache/
-rag-frontend/public/build/
-rag-frontend/.env.local
-rag-frontend/.env.development.local
-rag-frontend/.env.test.local
-rag-frontend/.env.production.local
-rag-frontend/npm-debug.log*
-rag-frontend/yarn-debug.log*
-rag-frontend/yarn-error.log*
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.next/
+frontend/out/
+frontend/.nuxt/
+frontend/.cache/
+frontend/public/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
 
 # Large language model files
 *.gguf
@@ -154,6 +159,7 @@ rag-frontend/yarn-error.log*
 *.pt
 *.bin
 *.safetensors
+model.safetensors
 # But don't ignore small model config files
 !config.json
 !tokenizer_config.json
@@ -162,3 +168,9 @@ rag-frontend/yarn-error.log*
 # Temporary experiment files
 experiments/
 runs/
+
+# Virtual environment
+bin/
+include/
+lib/
+pyvenv.cfg

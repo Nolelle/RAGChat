@@ -5,6 +5,7 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
     const [message, setMessage] = useState('');
     const [uploadStatus, setUploadStatus] = useState(null);
     const inputRef = useRef(null);
+    const fileInputRef = useRef(null);
     
     const API_URL = 'http://localhost:8000';
 
@@ -17,6 +18,10 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
         if (!allowedTypes.includes(uploadedFile.type)) {
             setUploadStatus('error');
             handleApiError(new Error('Only PDF, TXT, and MD files are allowed'));
+            // Reset the file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
             return;
         }
         
@@ -24,6 +29,10 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
         if (uploadedFile.size > 10 * 1024 * 1024) {
             setUploadStatus('error');
             handleApiError(new Error('File size must be less than 10MB'));
+            // Reset the file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
             return;
         }
         
@@ -48,18 +57,22 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
             
             if (data.status === 'success') {
                 setUploadStatus('success');
+                // Add a system message about the successful upload
                 addMessage({
                     text: `File "${uploadedFile.name}" uploaded successfully.`,
                     isUser: false
                 });
             } else {
-                setUploadStatus('error');
-                throw new Error(data.message || 'Error uploading file');
+                throw new Error(data.message || 'Failed to upload file');
             }
         } catch (error) {
             setUploadStatus('error');
             handleApiError(error);
             setFile(null);
+            // Reset the file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
         }
     };
 
@@ -126,6 +139,10 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
     const clearFile = () => {
         setFile(null);
         setUploadStatus(null);
+        // Reset the file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     return (
@@ -151,6 +168,7 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
                                     : '+'
                     }</span>
                     <input 
+                        ref={fileInputRef}
                         type="file" 
                         className="hidden" 
                         onChange={handleFileUpload} 

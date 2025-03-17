@@ -36,7 +36,7 @@ class RAGSystem:
 
     def __init__(
         self,
-        model_dir: str = "flan-t5-first-responder",
+        model_dir: str = "flan-t5-base-first-responder",
         uploads_dir: str = "uploads",
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         top_k: int = 5,
@@ -79,7 +79,28 @@ class RAGSystem:
         # Track indexed files
         self.indexed_files = set()
 
+        # Warm up the embedding models
+        self.warm_up()
+
         logger.info("RAG system initialized successfully")
+
+    def warm_up(self):
+        """
+        Warm up the embedding models by calling their warm_up() methods.
+        This ensures the models are loaded before they are used.
+        """
+        try:
+            logger.info("Warming up embedding models...")
+            # Warm up document embedder
+            self.document_embedder.warm_up()
+
+            # Warm up text embedder
+            self.text_embedder.warm_up()
+
+            logger.info("Embedding models warmed up successfully")
+        except Exception as e:
+            logger.error(f"Error warming up embedding models: {str(e)}")
+            raise
 
     def _load_model(self):
         """
@@ -257,12 +278,22 @@ class RAGSystem:
             if context_docs is None:
                 context_docs = self.retrieve_context(query)
 
-            # Format context
+            # Sort documents by relevance score if available
+            if context_docs and hasattr(context_docs[0], "score"):
+                context_docs = sorted(
+                    context_docs,
+                    key=lambda doc: doc.score if hasattr(doc, "score") else 0,
+                    reverse=True,
+                )
+
+            # Format context with document separators
             context_text = ""
             context_sources = []
 
-            for doc in context_docs:
-                context_text += doc.content + "\n\n"
+            for i, doc in enumerate(context_docs):
+                # Add document separator with index
+                context_text += f"\n### Document {i+1}:\n{doc.content}\n"
+
                 if "file_name" in doc.meta:
                     source = {
                         "file_name": doc.meta["file_name"],
@@ -275,21 +306,34 @@ class RAGSystem:
                     if source not in context_sources:
                         context_sources.append(source)
 
-            # Format input with context
-            input_text = f"question: {query}\ncontext: {context_text}"
+            # Improved prompt format with better instructions
+            input_text = f"""Answer the question based on the following context. Provide a natural, conversational response that explains the information in your own words rather than directly quoting the text.
+
+Be helpful, clear, and educational in your tone. Synthesize information from multiple sources when relevant. If the context doesn't contain the information needed, say "I don't have enough information to answer this question."
+
+Context:
+{context_text}
+
+Question: {query}
+
+Answer:"""
 
             # Tokenize and move to device
             input_ids = self.tokenizer(
                 input_text, return_tensors="pt", truncation=True, max_length=512
             ).input_ids.to(self.device)
 
-            # Generate output
+            # Generate output with improved parameters
             outputs = self.model.generate(
                 input_ids,
-                max_length=512,
-                num_beams=4,
+                max_length=256,
+                min_length=50,
+                num_beams=5,
                 temperature=0.7,
                 no_repeat_ngram_size=2,
+                early_stopping=True,
+                do_sample=True,
+                top_p=0.9,
             )
 
             # Decode response
