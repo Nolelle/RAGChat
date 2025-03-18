@@ -20,6 +20,17 @@ from transformers import (
 )
 from datasets import Dataset, load_dataset
 import evaluate  # Import evaluate package for metrics
+from nltk.tokenize import word_tokenize, sent_tokenize
+import re
+import random
+
+try:
+    import bitsandbytes as bnb  # For 8-bit quantization
+
+    BITSANDBYTES_AVAILABLE = True
+except ImportError:
+    BITSANDBYTES_AVAILABLE = False
+    print("bitsandbytes not available, 8-bit quantization will be disabled")
 
 # Correct import for Haystack 2.0
 from haystack.components.generators import HuggingFaceAPIGenerator
@@ -40,15 +51,17 @@ class ModelTrainer:
         model_name: str = "google/flan-t5-small",
         dataset_path: str = "data/pseudo_data.json",
         output_dir: str = "flan-t5-first-responder",
-        batch_size: int = 2,
-        learning_rate: float = 5e-5,
-        num_train_epochs: int = 5,
+        batch_size: int = 1,  # Reduced batch size for larger models
+        learning_rate: float = 3e-5,  # Slightly lower learning rate
+        num_train_epochs: int = 8,  # More epochs for better learning
         max_source_length: int = 384,
         max_target_length: int = 96,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
-        gradient_accumulation_steps: int = 16,
+        gradient_accumulation_steps: int = 32,  # Increased for memory efficiency
         fp16: bool = True,
+        freeze_encoder: bool = False,  # Option to freeze encoder layers
+        load_in_8bit: bool = True,  # Enable 8-bit quantization
     ):
         """
         Initialize the ModelTrainer.
@@ -66,6 +79,8 @@ class ModelTrainer:
             warmup_ratio: Ratio of total training steps used for learning rate warmup
             gradient_accumulation_steps: Number of steps to accumulate gradients before performing an update
             fp16: Whether to use mixed precision training
+            freeze_encoder: Whether to freeze the encoder layers
+            load_in_8bit: Whether to load model in 8-bit precision
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -79,10 +94,19 @@ class ModelTrainer:
         self.warmup_ratio = warmup_ratio
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.fp16 = fp16
+        self.freeze_encoder = freeze_encoder
+        self.load_in_8bit = load_in_8bit
 
         # Check if CUDA is available
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {self.device}")
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+            logger.info(f"Using Apple Silicon acceleration (MPS)")
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            logger.info(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
+        else:
+            self.device = torch.device("cpu")
+            logger.info("No GPU detected, using CPU (this might be slower)")
 
     def load_dataset(self) -> Dataset:
         """
@@ -161,26 +185,36 @@ class ModelTrainer:
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        def preprocess_function(examples):
-            # Check for different possible column structures
-            if "input" in examples and "output" in examples:
-                # Format from DatasetCreator
-                inputs = examples["input"]
-                targets = examples["output"]
-            elif "question" in examples and "answer" in examples:
-                # Original expected format
-                inputs = examples["question"]
-                targets = examples["answer"]
-            elif "content" in examples:
-                # Format from preprocessed_data.json
-                inputs = examples["content"]
-                targets = examples["content"]
-            else:
-                # Fallback to using whatever columns are available
-                logger.warning(f"Unexpected column structure: {examples.keys()}")
-                inputs = examples[dataset.column_names[0]]
-                targets = examples[dataset.column_names[0]]
+        # Identify input and target columns
+        input_col, target_col = self._identify_dataset_columns(dataset)
+        logger.info(
+            f"Using columns for preprocessing: input={input_col}, target={target_col}"
+        )
 
+        # Log dataset sample for debugging
+        if len(dataset) > 0:
+            sample = dataset[0]
+            logger.info(
+                f"Sample example - {input_col}: {sample[input_col][:100]}..., {target_col}: {sample[target_col][:100]}..."
+            )
+
+        def preprocess_function(examples):
+            # Extract inputs and targets directly from identified columns
+            inputs = examples[input_col]
+            targets = examples[target_col]
+
+            # Log length statistics
+            if isinstance(inputs, list) and len(inputs) > 0:
+                input_lengths = [len(inp.split()) for inp in inputs]
+                target_lengths = [len(tgt.split()) for tgt in targets]
+                logger.info(
+                    f"Input length stats: min={min(input_lengths)}, max={max(input_lengths)}, avg={sum(input_lengths)/len(input_lengths):.1f}"
+                )
+                logger.info(
+                    f"Target length stats: min={min(target_lengths)}, max={max(target_lengths)}, avg={sum(target_lengths)/len(target_lengths):.1f}"
+                )
+
+            # Tokenize inputs
             model_inputs = tokenizer(
                 inputs,
                 max_length=self.max_source_length,
@@ -197,114 +231,174 @@ class ModelTrainer:
                     truncation=True,
                 )
 
-            model_inputs["labels"] = labels["input_ids"]
+            # Replace padding token id with -100 in labels for loss masking
+            labels_with_ignore = []
+            for label in labels["input_ids"]:
+                # Replace padding token id with -100
+                label_with_ignore = [
+                    -100 if token == tokenizer.pad_token_id else token
+                    for token in label
+                ]
+                labels_with_ignore.append(label_with_ignore)
+
+            model_inputs["labels"] = labels_with_ignore
             return model_inputs
 
-        # Process the dataset
+        # Process the dataset - crucially this removes all original columns and
+        # replaces them with tokenized versions
         processed_dataset = dataset.map(
-            preprocess_function, batched=True, remove_columns=dataset.column_names
+            preprocess_function,
+            batched=True,
+            remove_columns=dataset.column_names,  # Critical: remove original columns
+            desc="Tokenizing dataset",
+            num_proc=1,  # Single process to avoid conflicts
         )
+
+        # Log processed dataset info
+        logger.info(f"Processed dataset columns: {processed_dataset.column_names}")
+        logger.info(f"Processed dataset size: {len(processed_dataset)}")
 
         return processed_dataset
 
-    def train(self, dataset: Dataset) -> None:
+    def train(
+        self, train_dataset: Dataset, eval_dataset: Optional[Dataset] = None
+    ) -> None:
         """
-        Train the model on the provided dataset.
+        Train the model.
 
         Args:
-            dataset: The dataset to train on
+            train_dataset: Training dataset
+            eval_dataset: Evaluation dataset
         """
-        logger.info(f"Starting training with model {self.model_name}")
+        logger.info("Starting model training")
 
-        # Split dataset into training and evaluation sets (90% train, 10% eval)
-        dataset = dataset.shuffle(
-            seed=42
-        )  # Shuffle the dataset with a fixed seed for reproducibility
-        train_test_split = dataset.train_test_split(test_size=0.1)
-        train_dataset = train_test_split["train"]
-        eval_dataset = train_test_split["test"]
-
-        logger.info(
-            f"Split dataset into {len(train_dataset)} training examples and {len(eval_dataset)} evaluation examples"
-        )
-
-        # Load model and tokenizer
-        model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+        # Load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        # Load ROUGE metric for evaluation
+        # Verify dataset format is correct
+        logger.info(f"Training dataset columns: {train_dataset.column_names}")
+        expected_columns = ["input_ids", "attention_mask", "labels"]
+
+        # Only convert if needed - prefer using preprocess_data first
+        missing_columns = [
+            col for col in expected_columns if col not in train_dataset.column_names
+        ]
+        if missing_columns:
+            logger.warning(f"Dataset missing expected columns: {missing_columns}")
+            logger.info("Converting dataset format automatically")
+            train_dataset = self._convert_dataset_format(train_dataset, tokenizer)
+            if eval_dataset is not None:
+                eval_dataset = self._convert_dataset_format(eval_dataset, tokenizer)
+        else:
+            logger.info(
+                "Dataset already in the correct format with input_ids and labels"
+            )
+
+        # Quantization config for memory efficiency
+        quantization_config = None
+        if (
+            self.load_in_8bit
+            and "mps" not in str(self.device)
+            and BITSANDBYTES_AVAILABLE
+        ):  # 8-bit not fully supported on MPS
+            logger.info("Loading model in 8-bit precision")
+            quantization_config = {"load_in_8bit": True}
+        elif self.load_in_8bit:
+            logger.warning(
+                "8-bit quantization requested but not available - continuing with standard precision"
+            )
+
+        # Load model
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            self.model_name, **(quantization_config if quantization_config else {})
+        )
+
+        # Configure memory optimization settings
+        use_mps = torch.backends.mps.is_available()
+
+        # Create training arguments
+        gradient_checkpointing = False
+        if not self.freeze_encoder:
+            # Only use gradient checkpointing for full model training
+            gradient_checkpointing = True
+            logger.info("Enabling gradient checkpointing")
+            if hasattr(model, "gradient_checkpointing_enable"):
+                model.gradient_checkpointing_enable()
+        else:
+            logger.info("Gradient checkpointing disabled (using frozen encoder)")
+
+        # Freeze encoder if requested
+        if self.freeze_encoder:
+            logger.info("Freezing encoder layers")
+            for param in model.encoder.parameters():
+                param.requires_grad = False
+
+        # Move model to device
+        model = model.to(self.device)
+
+        # Create data collator
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer=tokenizer,
+            model=model,
+            padding="longest",
+        )
+
+        # Load metrics
         rouge_metric = evaluate.load("rouge")
+        bleu_metric = evaluate.load("bleu")
 
         # Define compute metrics function
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
 
-            try:
-                # Filter out extremely large token IDs that might cause overflow
-                max_token_id = tokenizer.vocab_size
+            # Decode generated predictions
+            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 
-                # Ensure preds doesn't have token IDs out of range
-                if isinstance(preds, np.ndarray):
-                    preds = np.where(
-                        preds < max_token_id, preds, tokenizer.pad_token_id
-                    )
-                else:
-                    # If it's a tensor
-                    preds = torch.where(
-                        preds < max_token_id,
-                        preds,
-                        torch.tensor(tokenizer.pad_token_id, device=preds.device),
-                    )
+            # Replace -100 in the labels as we can't decode them
+            labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-                # Decode generated summaries
-                decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+            # ROUGE expects newlines after each sentence
+            decoded_preds = [
+                "\n".join(sent_tokenize(pred.strip())) for pred in decoded_preds
+            ]
+            decoded_labels = [
+                "\n".join(sent_tokenize(label.strip())) for label in decoded_labels
+            ]
 
-                # Replace -100 in the labels as we can't decode them
-                labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-                # Also filter large token IDs in labels
-                labels = np.where(labels < max_token_id, labels, tokenizer.pad_token_id)
-                decoded_labels = tokenizer.batch_decode(
-                    labels, skip_special_tokens=True
-                )
+            # Calculate metrics
+            results = {}
 
-                # ROUGE expects newlines after each sentence
-                decoded_preds = ["\n".join(pred.split()) for pred in decoded_preds]
-                decoded_labels = ["\n".join(label.split()) for label in decoded_labels]
-
-                # Compute ROUGE scores
-                result = rouge_metric.compute(
-                    predictions=decoded_preds,
-                    references=decoded_labels,
-                    use_stemmer=True,
-                )
-
-                # Extract ROUGE f1 scores
-                result = {
-                    key: value.mid.fmeasure * 100 for key, value in result.items()
-                }
-
-                # Add mean generated length
-                prediction_lens = [len(pred.split()) for pred in decoded_preds]
-                result["gen_len"] = np.mean(prediction_lens)
-
-                return {k: round(v, 4) for k, v in result.items()}
-
-            except OverflowError as e:
-                logger.error(f"OverflowError in compute_metrics: {e}")
-                # Return a default metric value if decoding fails
-                return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "gen_len": 0.0}
-            except Exception as e:
-                logger.error(f"Error in compute_metrics: {e}")
-                # Return a default metric value if something else goes wrong
-                return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "gen_len": 0.0}
-
-        # Check if fp16 is supported on the current device
-        use_fp16 = self.fp16
-        if self.device.type != "cuda":
-            logger.warning(
-                f"fp16 is not supported on {self.device.type} devices. Disabling fp16."
+            # ROUGE scores
+            rouge_output = rouge_metric.compute(
+                predictions=decoded_preds,
+                references=decoded_labels,
+                use_stemmer=True,
             )
-            use_fp16 = False
+            for k, v in rouge_output.items():
+                results[k] = v.mid.fmeasure * 100
+
+            # BLEU score
+            try:
+                # Tokenize for BLEU
+                tokenized_preds = [pred.split() for pred in decoded_preds]
+                tokenized_labels = [
+                    [label.split()] for label in decoded_labels
+                ]  # BLEU expects list of references
+
+                bleu_output = bleu_metric.compute(
+                    predictions=tokenized_preds, references=tokenized_labels
+                )
+                results["bleu"] = bleu_output["bleu"] * 100
+            except Exception as e:
+                logger.warning(f"Error computing BLEU score: {e}")
+                results["bleu"] = 0.0
+
+            # Add mean generated length
+            prediction_lens = [len(pred.split()) for pred in decoded_preds]
+            results["gen_len"] = np.mean(prediction_lens)
+
+            return {k: round(v, 2) for k, v in results.items()}
 
         # Define training arguments
         training_args = Seq2SeqTrainingArguments(
@@ -312,33 +406,24 @@ class ModelTrainer:
             per_device_train_batch_size=self.batch_size,
             per_device_eval_batch_size=self.batch_size,
             learning_rate=self.learning_rate,
-            num_train_epochs=self.num_train_epochs,
-            save_total_limit=2,
-            save_strategy="epoch",
-            evaluation_strategy="epoch",
-            logging_dir=f"{self.output_dir}/logs",
-            logging_steps=100,
-            load_best_model_at_end=True,
-            metric_for_best_model="loss",
-            greater_is_better=False,
             weight_decay=self.weight_decay,
             warmup_ratio=self.warmup_ratio,
+            num_train_epochs=self.num_train_epochs,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
-            fp16=use_fp16,
+            fp16=self.fp16
+            and "mps" not in str(self.device),  # fp16 not fully supported on MPS
+            logging_dir=f"{self.output_dir}/logs",
+            logging_steps=50,
+            save_strategy="epoch",
+            evaluation_strategy="epoch" if eval_dataset is not None else "no",
+            save_total_limit=2,
             predict_with_generate=True,
             generation_max_length=self.max_target_length,
-            report_to="tensorboard",
-            # Memory optimization
-            dataloader_pin_memory=False,  # Disable pinned memory to reduce memory usage
-            optim="adamw_torch",  # Use the PyTorch optimizer implementation
-        )
-
-        # Create data collator
-        data_collator = DataCollatorForSeq2Seq(
-            tokenizer=tokenizer,
-            model=model,
-            padding="max_length",
-            max_length=self.max_source_length,
+            generation_num_beams=4,
+            load_best_model_at_end=True if eval_dataset is not None else False,
+            metric_for_best_model="rouge1" if eval_dataset is not None else None,
+            greater_is_better=True,
+            remove_unused_columns=False,  # Important to prevent column mismatch errors
         )
 
         # Create trainer
@@ -346,10 +431,10 @@ class ModelTrainer:
             model=model,
             args=training_args,
             train_dataset=train_dataset,
-            eval_dataset=eval_dataset,  # Add evaluation dataset
+            eval_dataset=eval_dataset,
             data_collator=data_collator,
             tokenizer=tokenizer,
-            compute_metrics=compute_metrics,  # Add compute_metrics function
+            compute_metrics=compute_metrics if eval_dataset is not None else None,
         )
 
         # Train the model
@@ -360,6 +445,112 @@ class ModelTrainer:
         logger.info(f"Saving model to {self.output_dir}")
         trainer.save_model(self.output_dir)
         tokenizer.save_pretrained(self.output_dir)
+
+    def _convert_dataset_format(self, dataset: Dataset, tokenizer) -> Dataset:
+        """
+        Convert a dataset with columns like 'input'/'output' to the expected format with 'input_ids'/'labels'.
+
+        Args:
+            dataset: The dataset to convert
+            tokenizer: The tokenizer to use for conversion
+
+        Returns:
+            Converted dataset with proper format
+        """
+        logger.info(f"Converting dataset with columns: {dataset.column_names}")
+
+        # Identify input and target columns
+        input_col, target_col = self._identify_dataset_columns(dataset)
+        logger.info(f"Identified columns: input={input_col}, target={target_col}")
+
+        def convert_function(examples):
+            # Extract inputs and targets
+            inputs = examples[input_col]
+            targets = examples[target_col]
+
+            # Tokenize inputs
+            model_inputs = tokenizer(
+                inputs,
+                max_length=self.max_source_length,
+                padding="max_length",
+                truncation=True,
+            )
+
+            # Tokenize targets
+            with tokenizer.as_target_tokenizer():
+                labels = tokenizer(
+                    targets,
+                    max_length=self.max_target_length,
+                    padding="max_length",
+                    truncation=True,
+                )
+
+            # Replace padding token id with -100 in labels
+            labels_with_ignore = []
+            for label in labels["input_ids"]:
+                label_with_ignore = [
+                    -100 if token == tokenizer.pad_token_id else token
+                    for token in label
+                ]
+                labels_with_ignore.append(label_with_ignore)
+
+            model_inputs["labels"] = labels_with_ignore
+            return model_inputs
+
+        # Apply conversion
+        converted_dataset = dataset.map(
+            convert_function,
+            batched=True,
+            remove_columns=dataset.column_names,
+            desc="Converting dataset format",
+            num_proc=1,  # Use single process to avoid potential conflicts
+        )
+
+        logger.info(f"Converted dataset columns: {converted_dataset.column_names}")
+        return converted_dataset
+
+    def _identify_dataset_columns(self, dataset: Dataset) -> Tuple[str, str]:
+        """
+        Identify the input and target columns in the dataset.
+
+        Args:
+            dataset: The dataset to analyze
+
+        Returns:
+            Tuple of (input_column, target_column)
+        """
+        columns = dataset.column_names
+        logger.info(f"Dataset column names: {columns}")
+
+        # Log a sample to help with debugging
+        if len(dataset) > 0:
+            logger.info(f"Dataset sample: {dataset[0]}")
+
+        # Check for standard column patterns
+        if "question" in columns and "answer" in columns:
+            return "question", "answer"
+        elif "input" in columns and "output" in columns:
+            return "input", "output"
+        elif "source" in columns and "target" in columns:
+            return "source", "target"
+        elif "prompt" in columns and "completion" in columns:
+            return "prompt", "completion"
+        elif "text" in columns and "labels" in columns:
+            return "text", "labels"
+
+        # Default to first two columns
+        if len(columns) >= 2:
+            logger.warning(
+                f"Using first two columns as input/output: {columns[0]}, {columns[1]}"
+            )
+            return columns[0], columns[1]
+        elif len(columns) == 1:
+            logger.warning(
+                f"Only one column found ({columns[0]}), using it for both input and output"
+            )
+            return columns[0], columns[0]
+        else:
+            raise ValueError("Dataset has no columns")
 
     def run(self) -> None:
         """Run the complete training pipeline."""

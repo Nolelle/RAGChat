@@ -57,14 +57,24 @@ class DocumentPreprocessor:
                     # Create new component instances for each file
                     pdf_converter = PyPDFToDocument()
                     text_converter = TextFileToDocument()
-                    splitter = DocumentSplitter(
-                        split_by="sentence", split_length=3, split_overlap=1
+
+                    # First split by chapter or section (larger units)
+                    section_splitter = DocumentSplitter(
+                        split_by="passage",
+                        split_length=10,
+                        split_overlap=2,
+                        add_page_number=True,
+                    )
+
+                    # Then split into smaller chunks for more precise retrieval
+                    chunk_splitter = DocumentSplitter(
+                        split_by="word", split_length=150, split_overlap=30
                     )
 
                     # Create a pipeline for each file
                     pipeline = Pipeline()
-                    pipeline.add_component("splitter", splitter)
 
+                    # Add appropriate converter based on file type
                     if file_path.suffix.lower() == ".pdf":
                         pipeline.add_component("converter", pdf_converter)
                     elif file_path.suffix.lower() in [".txt", ".md"]:
@@ -73,12 +83,31 @@ class DocumentPreprocessor:
                         logger.warning(f"Skipping unsupported file: {file_path}")
                         continue
 
-                    # Connect converter to splitter
-                    pipeline.connect("converter.documents", "splitter.documents")
+                    # Add splitters to pipeline
+                    pipeline.add_component("section_splitter", section_splitter)
+                    pipeline.add_component("chunk_splitter", chunk_splitter)
+
+                    # Connect components
+                    pipeline.connect(
+                        "converter.documents", "section_splitter.documents"
+                    )
+                    pipeline.connect(
+                        "section_splitter.documents", "chunk_splitter.documents"
+                    )
 
                     # Run pipeline
                     result = pipeline.run({"converter": {"sources": [str(file_path)]}})
-                    split_documents = result["splitter"]["documents"]
+
+                    # Get the final split documents
+                    split_documents = result["chunk_splitter"]["documents"]
+
+                    # Add metadata to documents
+                    for doc in split_documents:
+                        if "meta" not in doc or doc.meta is None:
+                            doc.meta = {}
+                        doc.meta["file_name"] = file_path.name
+                        doc.meta["file_path"] = str(file_path)
+
                     logger.info(
                         f"Split {file_path.name} into {len(split_documents)} chunks"
                     )

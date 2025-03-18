@@ -23,7 +23,11 @@ from haystack.components.embedders import (
     SentenceTransformersDocumentEmbedder,
     SentenceTransformersTextEmbedder,
 )
-from haystack.components.retrievers import InMemoryEmbeddingRetriever
+from haystack.components.retrievers import (
+    InMemoryEmbeddingRetriever,
+    InMemoryBM25Retriever,
+)
+from haystack.components.rankers import TransformersSentenceRanker
 from haystack.document_stores.in_memory import InMemoryDocumentStore
 
 # Configure logging
@@ -36,10 +40,12 @@ class RAGSystem:
 
     def __init__(
         self,
-        model_dir: str = "flan-t5-base-first-responder",
+        model_dir: str = "flan-t5-large-first-responder",
         uploads_dir: str = "uploads",
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        top_k: int = 5,
+        top_k: int = 8,
+        rerank_top_k: int = 5,
+        use_hybrid_retrieval: bool = True,
     ):
         """
         Initialize the RAG system.
@@ -49,12 +55,16 @@ class RAGSystem:
             uploads_dir: Directory to store uploaded files
             embedding_model: Name of the embedding model to use
             top_k: Number of documents to retrieve
+            rerank_top_k: Number of documents to keep after reranking
+            use_hybrid_retrieval: Whether to use hybrid retrieval
         """
         # Set parameters
         self.model_dir = Path(model_dir)
         self.uploads_dir = Path(uploads_dir)
         self.embedding_model = embedding_model
         self.top_k = top_k
+        self.rerank_top_k = rerank_top_k
+        self.use_hybrid_retrieval = use_hybrid_retrieval
 
         # Create uploads directory if it doesn't exist
         os.makedirs(self.uploads_dir, exist_ok=True)
@@ -70,8 +80,16 @@ class RAGSystem:
             model=self.embedding_model
         )
 
-        # Initialize retriever
-        self.retriever = InMemoryEmbeddingRetriever(document_store=self.document_store)
+        # Initialize retrievers
+        self.embedding_retriever = InMemoryEmbeddingRetriever(
+            document_store=self.document_store
+        )
+        self.bm25_retriever = InMemoryBM25Retriever(document_store=self.document_store)
+
+        # Initialize reranker
+        self.reranker = TransformersSentenceRanker(
+            model="cross-encoder/ms-marco-MiniLM-L-6-v2", top_k=self.rerank_top_k
+        )
 
         # Load model and tokenizer
         self.model, self.tokenizer, self.device = self._load_model()
@@ -237,24 +255,51 @@ class RAGSystem:
         Retrieve relevant documents for a query.
 
         Args:
-            query: The query to retrieve context for
+            query: The user's query
 
         Returns:
-            List[Document]: List of retrieved documents
+            List[Document]: List of relevant documents
         """
         try:
-            # Embed query
-            embedded_query = self.text_embedder.run(text=query)["embedding"]
+            # Check if there are any documents in the store
+            if self.document_store.count_documents() == 0:
+                logger.warning("Document store is empty. No documents to retrieve.")
+                return []
 
-            # Retrieve documents
-            retrieved_documents = self.retriever.run(
-                query_embedding=embedded_query, top_k=self.top_k
-            )["documents"]
+            # Hybrid retrieval approach
+            if self.use_hybrid_retrieval:
+                # Get documents from BM25 retriever
+                bm25_docs = self.bm25_retriever.run(
+                    {"query": query, "top_k": self.top_k}
+                )["documents"]
 
-            logger.info(
-                f"Retrieved {len(retrieved_documents)} documents for query: {query}"
-            )
-            return retrieved_documents
+                # Get documents from embedding retriever
+                embedding_docs = self.embedding_retriever.run(
+                    {"query": query, "top_k": self.top_k}
+                )["documents"]
+
+                # Combine results (removing duplicates)
+                combined_docs = []
+                seen_ids = set()
+
+                for doc in bm25_docs + embedding_docs:
+                    if doc.id not in seen_ids:
+                        combined_docs.append(doc)
+                        seen_ids.add(doc.id)
+
+                # Rerank the combined results
+                if combined_docs and len(combined_docs) > 0:
+                    reranker_result = self.reranker.run(
+                        {"documents": combined_docs, "query": query}
+                    )
+                    return reranker_result["documents"]
+                return combined_docs
+
+            # Fallback to just embedding retrieval
+            else:
+                return self.embedding_retriever.run(
+                    {"query": query, "top_k": self.top_k}
+                )["documents"]
 
         except Exception as e:
             logger.error(f"Error retrieving context for query '{query}': {str(e)}")
@@ -286,15 +331,26 @@ class RAGSystem:
                     reverse=True,
                 )
 
-            # Format context with document separators
+            # Format context with document separators and improved structure
             context_text = ""
             context_sources = []
 
             for i, doc in enumerate(context_docs):
-                # Add document separator with index
-                context_text += f"\n### Document {i+1}:\n{doc.content}\n"
+                # Include metadata in context if available
+                meta_info = ""
+                if doc.meta:
+                    if "file_name" in doc.meta:
+                        meta_info += f" [Source: {doc.meta['file_name']}]"
+                    if "page_number" in doc.meta:
+                        meta_info += f" [Page: {doc.meta['page_number']}]"
 
-                if "file_name" in doc.meta:
+                # Add document with improved formatting
+                context_text += (
+                    f"\n### Document {i+1}{meta_info}:\n{doc.content.strip()}\n"
+                )
+
+                # Track sources for return value
+                if doc.meta and "file_name" in doc.meta:
                     source = {
                         "file_name": doc.meta["file_name"],
                         "snippet": (
@@ -303,13 +359,23 @@ class RAGSystem:
                             else doc.content
                         ),
                     }
+                    if "page_number" in doc.meta:
+                        source["page"] = doc.meta["page_number"]
                     if source not in context_sources:
                         context_sources.append(source)
 
-            # Improved prompt format with better instructions
-            input_text = f"""Answer the question based on the following context. Provide a natural, conversational response that explains the information in your own words rather than directly quoting the text.
+            # Expert instruction prompt for better paraphrasing and information synthesis
+            input_text = f"""You are a first responder education assistant designed to provide accurate, clear information based on training materials.
 
-Be helpful, clear, and educational in your tone. Synthesize information from multiple sources when relevant. If the context doesn't contain the information needed, say "I don't have enough information to answer this question."
+Answer the question based on ONLY the following context. Your goal is to synthesize the information into a helpful, educational response.
+
+Never directly copy text from the documents. Instead:
+1. Analyze the key points from all relevant sections
+2. Connect related information across different documents
+3. Explain concepts in simple, clear terms for someone in training
+4. Structure your response in a logical, easy-to-understand format
+5. Be conversational but professional in your tone
+6. If the context doesn't contain enough information, acknowledge limitations
 
 Context:
 {context_text}
@@ -323,17 +389,20 @@ Answer:"""
                 input_text, return_tensors="pt", truncation=True, max_length=512
             ).input_ids.to(self.device)
 
-            # Generate output with improved parameters
+            # Generate output with optimized parameters for better responses
             outputs = self.model.generate(
                 input_ids,
-                max_length=256,
-                min_length=50,
+                max_length=300,  # Increased for more comprehensive answers
+                min_length=75,  # Ensure responses have reasonable length
                 num_beams=5,
-                temperature=0.7,
-                no_repeat_ngram_size=2,
+                temperature=0.8,  # Balanced for creativity and accuracy
+                no_repeat_ngram_size=3,
                 early_stopping=True,
                 do_sample=True,
-                top_p=0.9,
+                top_k=50,  # Consider more tokens for each step
+                top_p=0.92,
+                repetition_penalty=1.2,  # Discourage repetition
+                length_penalty=1.5,  # Encourage longer responses
             )
 
             # Decode response

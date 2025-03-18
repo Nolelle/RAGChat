@@ -1,6 +1,23 @@
-import React from "react";
+import React, { useState } from "react";
 
 const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
+    const [expandedSources, setExpandedSources] = useState({});
+    
+    const toggleSourceExpansion = (messageIndex) => {
+        setExpandedSources(prev => ({
+            ...prev,
+            [messageIndex]: !prev[messageIndex]
+        }));
+    };
+    
+    // Function to extract filename without UUID prefix
+    const formatFileName = (fileName) => {
+        // Check if the filename has a UUID pattern (32 hex chars + underscore)
+        const uuidPattern = /^[a-f0-9]{32}_(.+)$/i;
+        const match = fileName.match(uuidPattern);
+        return match ? match[1] : fileName;
+    };
+    
     return (
         <div className="flex-1 bg-gray-800 p-4 overflow-auto flex flex-col">
             {messages.length === 0 ? (
@@ -26,13 +43,40 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                 {msg.text}
                             </div>
                             {msg.context && msg.context.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-gray-600 text-xs text-gray-300">
-                                    <div className="font-semibold mb-1">Sources:</div>
-                                    {msg.context.map((ctx, ctxIndex) => (
-                                        <div key={ctxIndex} className="mb-1 pl-2 border-l-2 border-gray-500">
-                                            <span className="font-medium">{ctx.file_name}:</span> {ctx.snippet}
+                                <div className="mt-3 pt-2 border-t border-gray-600 text-xs text-gray-300">
+                                    <div 
+                                        className="font-semibold mb-2 flex items-center cursor-pointer hover:text-blue-300"
+                                        onClick={() => toggleSourceExpansion(index)}
+                                    >
+                                        <svg 
+                                            xmlns="http://www.w3.org/2000/svg" 
+                                            className={`h-4 w-4 mr-1 transition-transform ${expandedSources[index] ? 'rotate-90' : ''}`} 
+                                            fill="none" 
+                                            viewBox="0 0 24 24" 
+                                            stroke="currentColor"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                        Sources ({msg.context.length})
+                                    </div>
+                                    
+                                    {expandedSources[index] && (
+                                        <div className="mt-2 space-y-2 bg-gray-800 p-2 rounded">
+                                            {msg.context.map((ctx, ctxIndex) => (
+                                                <div 
+                                                    key={ctxIndex} 
+                                                    className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
+                                                >
+                                                    <div className="font-medium text-blue-300 mb-1">
+                                                        {formatFileName(ctx.file_name)}
+                                                    </div>
+                                                    <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
+                                                        {ctx.snippet}
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             )}
                         </div>
