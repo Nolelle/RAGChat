@@ -15,7 +15,7 @@ from typing import List
 from haystack import Pipeline
 from haystack.dataclasses import Document
 from haystack.components.converters import TextFileToDocument, PyPDFToDocument
-from haystack.components.preprocessors import DocumentSplitter
+from haystack.components.preprocessors import DocumentSplitter, DocumentCleaner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,70 +48,68 @@ class DocumentPreprocessor:
         os.makedirs(self.output_dir, exist_ok=True)
 
         all_documents = []
+        file_count = 0
 
         # Process each file in the docs directory
         for file_path in self.docs_dir.glob("**/*"):
             if file_path.is_file():
-                logger.info(f"Processing file: {file_path}")
+                # Log which file is being processed
+                file_count += 1
+                logger.info(f"Processing file {file_count}: {file_path.name}")
+
                 try:
-                    # Create new component instances for each file
-                    pdf_converter = PyPDFToDocument()
-                    text_converter = TextFileToDocument()
-
-                    # First split by chapter or section (larger units)
-                    section_splitter = DocumentSplitter(
-                        split_by="passage",
-                        split_length=10,
-                        split_overlap=2,
-                        add_page_number=True,
-                    )
-
-                    # Then split into smaller chunks for more precise retrieval
-                    chunk_splitter = DocumentSplitter(
-                        split_by="word", split_length=150, split_overlap=30
-                    )
-
                     # Create a pipeline for each file
                     pipeline = Pipeline()
 
                     # Add appropriate converter based on file type
                     if file_path.suffix.lower() == ".pdf":
-                        pipeline.add_component("converter", pdf_converter)
+                        pipeline.add_component("converter", PyPDFToDocument())
                     elif file_path.suffix.lower() in [".txt", ".md"]:
-                        pipeline.add_component("converter", text_converter)
+                        pipeline.add_component("converter", TextFileToDocument())
                     else:
-                        logger.warning(f"Skipping unsupported file: {file_path}")
                         continue
 
-                    # Add splitters to pipeline
-                    pipeline.add_component("section_splitter", section_splitter)
-                    pipeline.add_component("chunk_splitter", chunk_splitter)
+                    # Add a document cleaner
+                    pipeline.add_component("cleaner", DocumentCleaner())
 
-                    # Connect components
-                    pipeline.connect(
-                        "converter.documents", "section_splitter.documents"
-                    )
-                    pipeline.connect(
-                        "section_splitter.documents", "chunk_splitter.documents"
+                    # Add a single splitter with valid parameters
+                    pipeline.add_component(
+                        "splitter",
+                        DocumentSplitter(
+                            split_by="word", split_length=150, split_overlap=30
+                        ),
                     )
 
-                    # Run pipeline
+                    # Try with specific component connections
+                    pipeline.connect("converter.documents", "cleaner.documents")
+                    pipeline.connect("cleaner.documents", "splitter.documents")
+
+                    # Run pipeline with a single file path
+                    logger.debug(f"Running pipeline for {file_path}")
                     result = pipeline.run({"converter": {"sources": [str(file_path)]}})
 
-                    # Get the final split documents
-                    split_documents = result["chunk_splitter"]["documents"]
+                    # If documents were successfully processed
+                    if "splitter" in result and "documents" in result["splitter"]:
+                        split_documents = result["splitter"]["documents"]
 
-                    # Add metadata to documents
-                    for doc in split_documents:
-                        if "meta" not in doc or doc.meta is None:
-                            doc.meta = {}
-                        doc.meta["file_name"] = file_path.name
-                        doc.meta["file_path"] = str(file_path)
+                        # Ensure we have a list of documents
+                        if not isinstance(split_documents, list):
+                            split_documents = [split_documents]
 
-                    logger.info(
-                        f"Split {file_path.name} into {len(split_documents)} chunks"
-                    )
-                    all_documents.extend(split_documents)
+                        # Add metadata to documents
+                        for i, doc in enumerate(split_documents):
+                            if not hasattr(doc, "meta") or doc.meta is None:
+                                doc.meta = {}
+                            doc.meta["file_name"] = file_path.name
+                            doc.meta["file_path"] = str(file_path)
+
+                        # Log the number of chunks created
+                        logger.info(
+                            f"Split {file_path.name} into {len(split_documents)} chunks"
+                        )
+                        all_documents.extend(split_documents)
+                    else:
+                        logger.warning(f"No documents produced for {file_path}")
 
                 except Exception as e:
                     logger.error(f"Error processing {file_path}: {str(e)}")

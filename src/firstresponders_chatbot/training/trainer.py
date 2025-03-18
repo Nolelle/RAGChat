@@ -350,55 +350,48 @@ class ModelTrainer:
         # Define compute metrics function
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
+            if isinstance(preds, tuple):
+                preds = preds[0]
 
-            # Decode generated predictions
-            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-
-            # Replace -100 in the labels as we can't decode them
+            # Replace -100 with pad token id
             labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+
+            # Decode predictions and labels
+            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-            # ROUGE expects newlines after each sentence
-            decoded_preds = [
-                "\n".join(sent_tokenize(pred.strip())) for pred in decoded_preds
-            ]
-            decoded_labels = [
-                "\n".join(sent_tokenize(label.strip())) for label in decoded_labels
-            ]
+            # Normalize whitespace
+            decoded_preds = [pred.strip() for pred in decoded_preds]
+            decoded_labels = [label.strip() for label in decoded_labels]
 
-            # Calculate metrics
-            results = {}
+            # Initialize metrics
+            rouge_scorer = evaluate.load("rouge")
 
-            # ROUGE scores
-            rouge_output = rouge_metric.compute(
-                predictions=decoded_preds,
-                references=decoded_labels,
-                use_stemmer=True,
+            # Compute ROUGE
+            result = rouge_scorer.compute(
+                predictions=decoded_preds, references=decoded_labels, use_stemmer=True
             )
-            for k, v in rouge_output.items():
-                results[k] = v.mid.fmeasure * 100
 
-            # BLEU score
-            try:
-                # Tokenize for BLEU
-                tokenized_preds = [pred.split() for pred in decoded_preds]
-                tokenized_labels = [
-                    [label.split()] for label in decoded_labels
-                ]  # BLEU expects list of references
+            # Extract ROUGE scores - handle both old and new ROUGE implementation
+            results = {}
+            for k, v in result.items():
+                # Handle different versions of ROUGE metrics
+                if hasattr(v, "mid"):
+                    # Old version
+                    results[k] = v.mid.fmeasure * 100
+                elif isinstance(v, float):
+                    # New version - directly returns float values
+                    results[k] = v * 100
+                else:
+                    # Unexpected type
+                    results[k] = 0.0
+                    logger.warning(f"Unexpected type for ROUGE metric {k}: {type(v)}")
 
-                bleu_output = bleu_metric.compute(
-                    predictions=tokenized_preds, references=tokenized_labels
-                )
-                results["bleu"] = bleu_output["bleu"] * 100
-            except Exception as e:
-                logger.warning(f"Error computing BLEU score: {e}")
-                results["bleu"] = 0.0
-
-            # Add mean generated length
+            # Add prediction length
             prediction_lens = [len(pred.split()) for pred in decoded_preds]
             results["gen_len"] = np.mean(prediction_lens)
 
-            return {k: round(v, 2) for k, v in results.items()}
+            return results
 
         # Define training arguments
         training_args = Seq2SeqTrainingArguments(

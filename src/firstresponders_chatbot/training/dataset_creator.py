@@ -167,12 +167,29 @@ class DatasetCreator:
         logger.info(f"After length filtering: {len(filtered_docs)} documents")
 
         # Clean text
+        logger.info("Cleaning document text...")
+        cleaned_count = 0
         for doc in filtered_docs:
             doc["content"] = self._clean_text(doc["content"])
+            cleaned_count += 1
+            if cleaned_count % 1000 == 0:
+                logger.info(f"Cleaned {cleaned_count}/{len(filtered_docs)} documents")
+
+        logger.info(f"Completed text cleaning for {len(filtered_docs)} documents")
 
         # Deduplicate similar documents
+        logger.info("Starting document deduplication...")
         unique_docs = []
+        duplicate_count = 0
+        processed_count = 0
+
         for doc in filtered_docs:
+            processed_count += 1
+            if processed_count % 500 == 0:
+                logger.info(
+                    f"Deduplication progress: {processed_count}/{len(filtered_docs)} documents (found {duplicate_count} duplicates)"
+                )
+
             is_duplicate = False
             for unique_doc in unique_docs:
                 similarity = self._calculate_text_similarity(
@@ -180,12 +197,14 @@ class DatasetCreator:
                 )
                 if similarity > self.similarity_threshold:
                     is_duplicate = True
+                    duplicate_count += 1
                     break
 
             if not is_duplicate:
                 unique_docs.append(doc)
 
-        logger.info(f"After deduplication: {len(unique_docs)} documents")
+        logger.info(f"Deduplication complete: found {duplicate_count} duplicates")
+        logger.info(f"After deduplication: {len(unique_docs)} documents remain")
         return unique_docs
 
     def generate_question_answer_pairs(
@@ -200,6 +219,7 @@ class DatasetCreator:
         Returns:
             List of question-answer pairs
         """
+        logger.info("Starting question-answer pair generation")
         qa_pairs = []
 
         # Filter and clean documents
@@ -239,12 +259,28 @@ class DatasetCreator:
         ]
 
         # Group similar documents to create synthetic context
+        logger.info("Starting to group similar documents")
         grouped_docs = self._group_similar_documents(filtered_documents)
+        logger.info(
+            f"Created {len(grouped_docs)} document groups for context generation"
+        )
 
         # Track generated topics to avoid duplicates
         generated_topics = set()
 
+        # Process each document group
+        logger.info("Generating question-answer pairs from document groups")
+        doc_group_count = 0
+
         for doc_group in grouped_docs:
+            doc_group_count += 1
+
+            # Log progress every 50 document groups
+            if doc_group_count % 50 == 0:
+                logger.info(
+                    f"Processed {doc_group_count}/{len(grouped_docs)} document groups, generated {len(qa_pairs)} QA pairs so far"
+                )
+
             if len(doc_group) < 1:
                 continue
 
@@ -348,19 +384,34 @@ Answer:"""
         Returns:
             Filtered list of QA pairs
         """
+        logger.info(f"Starting QA pair quality filtering on {len(qa_pairs)} pairs")
         filtered = []
+        rejected_short_answer = 0
+        rejected_question_in_answer = 0
 
         for pair in qa_pairs:
             # Ensure minimum length for answers
             if len(pair["answer"]) < 50:
+                rejected_short_answer += 1
                 continue
 
             # Skip if question appears in answer verbatim
             if pair["question"] in pair["answer"]:
+                rejected_question_in_answer += 1
                 continue
 
             # Add to filtered list
             filtered.append(pair)
+
+        logger.info(
+            f"QA filtering stats: {rejected_short_answer} pairs rejected for short answers"
+        )
+        logger.info(
+            f"QA filtering stats: {rejected_question_in_answer} pairs rejected for question in answer"
+        )
+        logger.info(
+            f"After quality filtering: {len(filtered)} question-answer pairs kept"
+        )
 
         return filtered
 
@@ -382,17 +433,31 @@ Answer:"""
         Returns:
             List of document groups
         """
+        logger.info(f"Starting document grouping with {len(documents)} documents")
+
         # Extract keywords for each document
         doc_keywords = []
-        for doc in documents:
+        for i, doc in enumerate(documents):
+            if i % 1000 == 0 and i > 0:
+                logger.info(f"Extracted keywords for {i}/{len(documents)} documents")
+
             keywords = self._extract_keywords(doc["content"], top_n=5)
             doc_keywords.append((doc, set(keywords)))
+
+        logger.info(f"Completed keyword extraction for {len(documents)} documents")
 
         # Create groups
         groups = []
         remaining_docs = doc_keywords.copy()
 
+        group_count = 0
+        logger.info(f"Creating document groups (target: up to {num_groups} groups)")
+
         while len(remaining_docs) >= 1 and len(groups) < num_groups:
+            # Log progress every 50 groups
+            if len(groups) % 50 == 0 and len(groups) > 0:
+                logger.info(f"Created {len(groups)} document groups so far")
+
             # Start a new group with the first document
             current_group = [remaining_docs[0][0]]
             current_keywords = remaining_docs[0][1]
@@ -545,15 +610,20 @@ Answer:"""
         documents = self.load_preprocessed_data()
 
         # Generate question-answer pairs
+        logger.info("Starting question-answer pair generation process")
         qa_pairs = self.generate_question_answer_pairs(documents)
+        logger.info(f"Successfully generated {len(qa_pairs)} question-answer pairs")
 
         # Split data
+        logger.info("Splitting data into train/validation/test sets")
         train_data, val_data, test_data = self.split_data(qa_pairs)
 
         # Format data for Flan-T5
+        logger.info("Formatting data for model fine-tuning")
         dataset = self.format_for_flan_t5(train_data, val_data, test_data)
 
         # Save dataset
+        logger.info("Saving the final dataset")
         self.save_dataset(dataset)
 
         logger.info("Dataset creation completed successfully!")

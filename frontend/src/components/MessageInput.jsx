@@ -146,7 +146,7 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
     };
 
     return (
-        <div className="p-4 bg-gray-900 border-t border-gray-700 flex items-center shadow-md">
+        <div className="p-4 bg-gray-900 border-t border-gray-700 flex items-center shadow-md relative">
             <div className="flex items-center w-full max-w-4xl mx-auto">
                 {/* File upload button */}
                 <label className={`w-10 h-10 flex items-center justify-center rounded-full cursor-pointer transition mr-2 ${
@@ -203,23 +203,25 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
 
             {/* Display uploaded file name */}
             {file && (
-                <div className="absolute bottom-16 left-0 right-0 bg-gray-800 p-2 border-t border-gray-700 flex items-center justify-between px-4">
-                    <div className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                        </svg>
-                        <span className="text-sm text-gray-300 truncate max-w-xs">
-                            {uploadStatus === 'success' ? '✓ ' : ''}{file.name}
-                        </span>
+                <div className="absolute bottom-16 left-0 right-0 bg-gray-800 p-2 border-t border-gray-700 flex justify-center">
+                    <div className="w-full max-w-4xl mx-auto flex items-center justify-between px-4">
+                        <div className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm text-gray-300 truncate max-w-xs">
+                                {uploadStatus === 'success' ? '✓ ' : ''}{file.name}
+                            </span>
+                        </div>
+                        <button 
+                            onClick={clearFile}
+                            className="text-gray-400 hover:text-gray-200"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
                     </div>
-                    <button 
-                        onClick={clearFile}
-                        className="text-gray-400 hover:text-gray-200"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                    </button>
                 </div>
             )}
         </div>
