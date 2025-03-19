@@ -34,20 +34,13 @@ def download_nltk_resources():
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model."
+        description="Train the FirstRespondersChatbot model with Phi-3 Mini."
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="google/flan-t5-small",
-        choices=[
-            "google/flan-t5-small",
-            "google/flan-t5-base",
-            "google/flan-t5-large",
-            "google/flan-t5-xl",
-            "google/flan-t5-xxl",
-        ],
-        help="Name of the pre-trained model to use",
+        default="microsoft/Phi-3-mini-4k-instruct",
+        help="Base model to use",
     )
     parser.add_argument(
         "--dataset_path",
@@ -58,7 +51,7 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="flan-t5-first-responder",
+        default="phi-3-mini-first-responder",
         help="Directory to save the trained model",
     )
     parser.add_argument(
@@ -70,31 +63,25 @@ def parse_args():
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=32,
-        help="Number of steps to accumulate gradients before performing an update",
+        default=16,
+        help="Number of steps to accumulate gradients",
     )
     parser.add_argument(
-        "--max_source_length",
+        "--max_seq_length",
         type=int,
-        default=384,
-        help="Maximum length of the source sequences",
-    )
-    parser.add_argument(
-        "--max_target_length",
-        type=int,
-        default=96,
-        help="Maximum length of the target sequences",
+        default=2048,
+        help="Maximum sequence length",
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=3e-5,
+        default=2e-4,
         help="Learning rate for training",
     )
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=8,
+        default=3,
         help="Number of epochs to train for",
     )
     parser.add_argument(
@@ -103,14 +90,28 @@ def parse_args():
         help="Whether to use mixed precision training",
     )
     parser.add_argument(
-        "--freeze_encoder",
+        "--load_in_4bit",
         action="store_true",
-        help="Whether to freeze the encoder layers",
+        default=True,
+        help="Whether to load model in 4-bit precision",
     )
     parser.add_argument(
-        "--load_in_8bit",
-        action="store_true",
-        help="Whether to load model in 8-bit precision",
+        "--lora_r",
+        type=int,
+        default=16,
+        help="Rank of the LoRA update matrices",
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        type=int,
+        default=32,
+        help="Scaling factor for LoRA",
+    )
+    parser.add_argument(
+        "--lora_dropout",
+        type=float,
+        default=0.05,
+        help="Dropout probability for LoRA layers",
     )
     parser.add_argument(
         "--train_test_split",
@@ -127,6 +128,12 @@ def parse_args():
         "--skip_preprocessing",
         action="store_true",
         help="Skip the preprocessing step to use the raw dataset",
+    )
+    parser.add_argument(
+        "--max_train_samples",
+        type=int,
+        default=None,
+        help="Maximum number of training samples to use (for faster training)",
     )
     return parser.parse_args()
 
@@ -163,12 +170,14 @@ def main():
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         num_train_epochs=args.num_train_epochs,
-        max_source_length=args.max_source_length,
-        max_target_length=args.max_target_length,
+        max_seq_length=args.max_seq_length,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         fp16=args.fp16,
-        freeze_encoder=args.freeze_encoder,
-        load_in_8bit=args.load_in_8bit,
+        load_in_4bit=args.load_in_4bit,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        max_train_samples=args.max_train_samples,
     )
 
     try:
@@ -193,20 +202,14 @@ def main():
             eval_dataset = None
             logger.info(f"Using all {len(train_dataset)} examples for training")
 
-        # Apply preprocessing if not skipped
+        # Apply formatting for Phi-3 instead of preprocessing
         if args.skip_preprocessing:
             logger.info("Skipping preprocessing as requested.")
         else:
-            logger.info("Applying preprocessing to dataset")
-            try:
-                train_dataset = trainer.preprocess_data(train_dataset)
-                if eval_dataset is not None:
-                    eval_dataset = trainer.preprocess_data(eval_dataset)
-            except Exception as e:
-                logger.error(f"Error during preprocessing: {e}")
-                logger.info(
-                    "Falling back to automatic format conversion during training"
-                )
+            logger.info("Formatting dataset for Phi-3")
+            train_dataset = train_dataset
+            if eval_dataset is not None:
+                eval_dataset = eval_dataset
 
         # Train the model
         trainer.train(train_dataset=train_dataset, eval_dataset=eval_dataset)

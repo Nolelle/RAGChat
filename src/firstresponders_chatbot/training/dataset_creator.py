@@ -2,7 +2,7 @@
 Dataset creation module for the FirstRespondersChatbot project.
 
 This module provides functionality to generate a pseudo-supervised dataset
-for fine-tuning the Flan-T5-Small model.
+for fine-tuning the Phi-3-Mini model (previously Flan-T5-Small).
 """
 
 import json
@@ -34,6 +34,7 @@ class DatasetCreator:
         min_content_length: int = 100,  # Minimum content length to consider
         similarity_threshold: float = 0.8,  # Threshold for duplicate detection
         max_examples_per_doc: int = 3,  # Maximum examples to generate from a document
+        model_format: str = "phi-3",  # Options: "phi-3" or "flan-t5"
     ):
         """
         Initialize the dataset creator.
@@ -47,6 +48,7 @@ class DatasetCreator:
             min_content_length: Minimum content length to consider for a document
             similarity_threshold: Threshold for detecting similar documents
             max_examples_per_doc: Maximum examples to generate from a document
+            model_format: Format to use for the dataset (phi-3 or flan-t5)
         """
         self.input_file = Path(input_file)
         self.output_file = Path(output_file)
@@ -56,6 +58,7 @@ class DatasetCreator:
         self.min_content_length = min_content_length
         self.similarity_threshold = similarity_threshold
         self.max_examples_per_doc = max_examples_per_doc
+        self.model_format = model_format
 
         # Download NLTK resources if needed
         try:
@@ -581,9 +584,45 @@ Answer:"""
         logger.info("Formatted data for Flan-T5 fine-tuning")
         return formatted_data
 
+    def format_for_phi_3(
+        self,
+        train_data: List[Dict[str, str]],
+        val_data: List[Dict[str, str]],
+        test_data: List[Dict[str, str]],
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """
+        Format data for Phi-3 fine-tuning.
+
+        Args:
+            train_data: Training data
+            val_data: Validation data
+            test_data: Test data
+
+        Returns:
+            Dictionary with formatted data
+        """
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+
+        # Format data for Phi-3 with chat template
+        def format_item(item):
+            return {
+                "input": f"{item['question']}",
+                "output": f"{item['answer']}",
+                "text": f"<|system|>\n{system_message}\n<|user|>\n{item['question']}\n<|assistant|>\n{item['answer']}",
+            }
+
+        formatted_data = {
+            "train": [format_item(item) for item in train_data],
+            "validation": [format_item(item) for item in val_data],
+            "test": [format_item(item) for item in test_data],
+        }
+
+        logger.info("Formatted data for Phi-3 fine-tuning")
+        return formatted_data
+
     def save_dataset(self, dataset: Dict[str, List[Dict[str, str]]]) -> None:
         """
-        Save dataset to JSON file.
+        Save dataset to a JSON file.
 
         Args:
             dataset: Dictionary with formatted data
@@ -591,11 +630,13 @@ Answer:"""
         # Create output directory if it doesn't exist
         os.makedirs(self.output_file.parent, exist_ok=True)
 
-        # Save dataset
+        # Save to JSON file
         with open(self.output_file, "w", encoding="utf-8") as f:
             json.dump(dataset, f, indent=2)
 
-        logger.info(f"Saved dataset to {self.output_file}")
+        logger.info(
+            f"Saved dataset with {len(dataset['train'])} training examples to {self.output_file}"
+        )
 
     def run(self) -> Dict[str, List[Dict[str, str]]]:
         """
@@ -618,9 +659,13 @@ Answer:"""
         logger.info("Splitting data into train/validation/test sets")
         train_data, val_data, test_data = self.split_data(qa_pairs)
 
-        # Format data for Flan-T5
-        logger.info("Formatting data for model fine-tuning")
-        dataset = self.format_for_flan_t5(train_data, val_data, test_data)
+        # Format data for the selected model
+        logger.info(f"Formatting data for {self.model_format} fine-tuning")
+        if self.model_format.lower() == "phi-3":
+            dataset = self.format_for_phi_3(train_data, val_data, test_data)
+        else:
+            # Default to Flan-T5 format for backward compatibility
+            dataset = self.format_for_flan_t5(train_data, val_data, test_data)
 
         # Save dataset
         logger.info("Saving the final dataset")

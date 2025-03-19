@@ -14,7 +14,7 @@ import json
 import uuid
 
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 
 from haystack import Pipeline, Document
 from haystack.components.converters import TextFileToDocument, PyPDFToDocument
@@ -142,28 +142,90 @@ class RAGSystem:
             device = torch.device("cpu")
             logger.info("No GPU detected, using CPU (this might be slower)")
 
+        # Configure quantization for efficiency
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+
         # Try to load fine-tuned model if it exists
         if self.model_dir.exists():
             try:
                 logger.info(
                     f"Attempting to load fine-tuned model from {self.model_dir}"
                 )
-                model = AutoModelForSeq2SeqLM.from_pretrained(str(self.model_dir))
-                tokenizer = AutoTokenizer.from_pretrained(str(self.model_dir))
+
+                # Load base model with quantization
+                from transformers import AutoModelForCausalLM
+
+                model = AutoModelForCausalLM.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct",
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                )
+
+                # Load tokenizer
+                tokenizer = AutoTokenizer.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct"
+                )
+
+                # Set padding token if not set
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+
+                # Try to load the LoRA adapter weights
+                adapter_path = os.path.join(self.model_dir, "adapter")
+                if os.path.exists(adapter_path):
+                    logger.info(f"Loading LoRA adapter from {adapter_path}")
+                    from peft import PeftModel
+
+                    model = PeftModel.from_pretrained(model, adapter_path)
+                else:
+                    # If adapter doesn't exist, may need to try loading the full model
+                    logger.info("LoRA adapter not found, trying to load full model")
+                    model = AutoModelForCausalLM.from_pretrained(
+                        self.model_dir,
+                        quantization_config=quantization_config,
+                        device_map="auto",
+                        torch_dtype=torch.float16,
+                    )
+
                 logger.info("Successfully loaded fine-tuned model")
             except Exception as e:
                 logger.warning(f"Could not load fine-tuned model: {str(e)}")
-                logger.info("Falling back to base Flan-T5 model")
-                model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-large")
-                tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
+                logger.info("Falling back to base Phi-3 model")
+                from transformers import AutoModelForCausalLM
+
+                model = AutoModelForCausalLM.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct",
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                )
+                tokenizer = AutoTokenizer.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct"
+                )
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
         else:
             # Use base model
-            logger.info("Fine-tuned model not found, using base Flan-T5 model")
-            model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-large")
-            tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
+            logger.info("Fine-tuned model not found, using base Phi-3 model")
+            from transformers import AutoModelForCausalLM
 
-        # Move model to device
-        model = model.to(device)
+            model = AutoModelForCausalLM.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct",
+                quantization_config=quantization_config,
+                device_map="auto",
+                torch_dtype=torch.float16,
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct"
+            )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
 
         return model, tokenizer, device
 
@@ -433,14 +495,7 @@ class RAGSystem:
         self, query: str, context_docs: Optional[List[Document]] = None
     ) -> Dict[str, Any]:
         """
-        Generate a response to a query using the RAG system.
-
-        Args:
-            query: Query to generate a response for
-            context_docs: Optional list of context documents to use instead of retrieving them
-
-        Returns:
-            Dict containing the query, answer, and context
+        Generate a response to a query using the RAG system with Phi-3.
         """
         logger.info(f"Generating response for query: {query}")
 
@@ -459,7 +514,6 @@ class RAGSystem:
                 }
 
             # Create context string from documents
-            # For Flan-T5, use a very clear format that highlights relevant information
             context_str = ""
             for i, doc in enumerate(context_docs[:3]):  # Limit to top 3 docs
                 context_str += f"Document {i+1}:\n{doc.content}\n\n"
@@ -471,74 +525,42 @@ class RAGSystem:
                 )
                 context_str = context_str[:6000] + "..."
 
-            # Log context information
-            logger.info(f"Using {len(context_docs)} documents for context")
-            logger.info(f"Context length: {len(context_str)} characters")
+            # Format prompt for Phi-3
+            prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information.
+<|user|>
+I need information about the following topic: {query}
 
-            # Check if we're using the fine-tuned model
-            is_fine_tuned = self.model_dir.exists() and "first-responder" in str(
-                self.model_dir
-            )
-
-            if is_fine_tuned:
-                # Format prompt for fine-tuned model
-                prompt = f"""Answer the question based on the following context. You are a first responders chatbot designed to help with training and education.
-
-Context:
+Here's the relevant information:
 {context_str}
-
-Question: {query}
-
-Answer:"""
-            else:
-                # Explicitly structured prompt specifically for Flan-T5
-                prompt = f"""Based on the following information, please answer: {query}
-
-Information:
-{context_str}
-
-Answer:"""
+<|assistant|>"""
 
             # Log the prompt
             logger.info(f"PROMPT:\n{prompt}")
 
             # Tokenize the prompt
-            inputs = self.tokenizer(
-                prompt, return_tensors="pt", truncation=True, max_length=1024
-            ).to(self.device)
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
-            logger.info(f"Input token length: {inputs['input_ids'].shape[1]}")
-
-            # Generate the answer with parameters optimized for Flan-T5
+            # Generate the answer with parameters optimized for Phi-3
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_length=150,
-                    min_length=10,
-                    num_beams=4,
-                    early_stopping=True,
-                    no_repeat_ngram_size=2,
-                    length_penalty=1.0,
+                    max_new_tokens=150,
+                    min_new_tokens=10,
+                    temperature=0.7,
+                    top_p=0.9,
+                    top_k=50,
+                    repetition_penalty=1.1,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id,
                 )
 
             # Decode the output
-            answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            answer = answer.strip()
+            full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-            # Log the raw output
-            logger.info(f"GENERATED ANSWER: {answer}")
-
-            # Check if the answer is too short or incomplete
-            if len(answer) < 15 or (".." in answer and len(answer) < 30):
-                logger.warning(f"Generated answer looks incomplete: '{answer}'")
-                # Extract relevant sentences from context as fallback
-                relevant_info = self._extract_relevant_info(query, context_docs)
-                if relevant_info:
-                    answer = f"Based on the available information, NFPA 1971 appears to relate to protective ensembles for firefighters. Specifically from the documents: {relevant_info}"
-                else:
-                    answer = "Based on the available information, I couldn't find a complete explanation of what NFPA 1971 regulates. It appears to be related to protective equipment for firefighters, but the specific details aren't clear in the provided documents."
-
-                logger.info(f"Using fallback answer: {answer}")
+            # Extract just the assistant's response (after the last <|assistant|> token)
+            response_parts = full_output.split("<|assistant|>")
+            answer = response_parts[-1].strip()
 
             # Get context metadata for response
             context_metadata = []
@@ -546,7 +568,7 @@ Answer:"""
                 meta = {
                     "file_name": doc.meta.get("file_name", "Unknown"),
                     "file_path": doc.meta.get("file_path", "Unknown"),
-                    "content_preview": (
+                    "snippet": (
                         doc.content[:200] + "..."
                         if len(doc.content) > 200
                         else doc.content
@@ -565,7 +587,6 @@ Answer:"""
 
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
-            # Print the full exception traceback for better debugging
             import traceback
 
             logger.error(f"Traceback: {traceback.format_exc()}")

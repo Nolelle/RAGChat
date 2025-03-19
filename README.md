@@ -10,6 +10,23 @@ The FirstRespondersChatbot is designed to assist first responders by providing q
 2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
 3. **Hybrid Retrieval**: Combines semantic search with keyword-based retrieval for better results
 
+## New: Transition to Phi-3 Mini
+
+This project has been upgraded to use Microsoft's Phi-3 Mini model instead of the previous Flan-T5 model. This transition provides several benefits:
+
+- Better response quality for first responder queries
+- More efficient training on Apple Silicon (M4 Pro)
+- Improved memory management through 4-bit quantization
+- Better handling of complex instructions through the Phi-3 architecture
+
+### Changes Implemented
+
+1. Switched from sequence-to-sequence to causal language modeling
+2. Implemented QLoRA for parameter-efficient fine-tuning
+3. Adapted prompt formats for Phi-3's chat format
+4. Optimized for Apple Silicon through MPS acceleration
+5. Updated RAG pipeline to work with the new model architecture
+
 ## Features
 
 - **Document Processing**: Upload and process PDF, TXT, and MD files containing first responder information

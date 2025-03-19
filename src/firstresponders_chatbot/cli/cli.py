@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -30,25 +30,16 @@ app = typer.Typer()
 class ChatbotCLI:
     """Command-line interface for the FirstRespondersChatbot."""
 
-    def __init__(self, model_dir: str = "flan-t5-first-responder"):
+    def __init__(self, model_dir: str = "phi-3-mini-first-responder"):
         """
-        Initialize the chatbot CLI.
-
-        Args:
-            model_dir: Directory containing the fine-tuned model
+        Initialize the chatbot CLI with Phi-3.
         """
         self.model_dir = Path(model_dir)
         self.model, self.tokenizer, self.device = self._load_model()
 
     def _load_model(self):
         """
-        Load the fine-tuned model and tokenizer.
-
-        This function checks for available hardware acceleration (Apple Silicon MPS
-        or NVIDIA CUDA) and loads the model onto the appropriate device.
-
-        Returns:
-            tuple: (model, tokenizer, device)
+        Load the fine-tuned Phi-3 model and tokenizer.
         """
         # Check if model exists
         if not self.model_dir.exists():
@@ -72,49 +63,101 @@ class ChatbotCLI:
                 "[yellow]No GPU detected, using CPU (this might be slower)[/yellow]"
             )
 
-        # Load model and tokenizer
-        console.print("Loading model from", self.model_dir)
-        model = AutoModelForSeq2SeqLM.from_pretrained(str(self.model_dir))
-        tokenizer = AutoTokenizer.from_pretrained(str(self.model_dir))
+        # Configure quantization
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
 
-        # Move model to device
-        model = model.to(device)
+        # Load Phi-3 model
+        console.print("Loading model from", self.model_dir)
+
+        # Try loading with adapter first
+        try:
+            from peft import PeftModel
+
+            # Load base model
+            base_model = AutoModelForCausalLM.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct",
+                quantization_config=quantization_config,
+                device_map="auto",
+                torch_dtype=torch.float16,
+            )
+
+            # Load tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct"
+            )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            # Check for adapter
+            adapter_path = os.path.join(self.model_dir, "adapter")
+            if os.path.exists(adapter_path):
+                console.print(f"Loading LoRA adapter from {adapter_path}")
+                model = PeftModel.from_pretrained(base_model, adapter_path)
+            else:
+                console.print("No adapter found, trying to load full model")
+                model = AutoModelForCausalLM.from_pretrained(
+                    str(self.model_dir),
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                )
+        except Exception as e:
+            console.print(f"[bold yellow]Warning:[/bold yellow] {str(e)}")
+            console.print("Falling back to base Phi-3 model")
+            model = AutoModelForCausalLM.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct",
+                quantization_config=quantization_config,
+                device_map="auto",
+                torch_dtype=torch.float16,
+            )
+            tokenizer = AutoTokenizer.from_pretrained(
+                "microsoft/Phi-3-mini-4k-instruct"
+            )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
 
         return model, tokenizer, device
 
     def generate_response(self, question: str) -> str:
         """
-        Generate a response to the user's question.
-
-        Args:
-            question: User's question
-
-        Returns:
-            str: Generated response
+        Generate a response using Phi-3.
         """
-        # Format question as in training
-        input_text = (
-            f"question: {question}"
-            if not question.startswith("question: ")
-            else question
-        )
+        # Format question for Phi-3
+        prompt = f"""<|system|>
+You are a first responders chatbot designed to provide accurate information about emergency procedures, protocols, and best practices.
+<|user|>
+{question}
+<|assistant|>"""
 
         # Tokenize and move to device
-        input_ids = self.tokenizer(input_text, return_tensors="pt").input_ids.to(
-            self.device
-        )
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
         # Generate output
-        outputs = self.model.generate(
-            input_ids,
-            max_length=512,  # Maximum length of the generated response
-            num_beams=4,  # Beam search for better quality responses
-            temperature=0.7,  # Add some randomness (values closer to 0 are more deterministic)
-            no_repeat_ngram_size=2,  # Avoid repeating the same phrases
-        )
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=250,
+                min_new_tokens=20,
+                temperature=0.7,
+                top_p=0.9,
+                top_k=50,
+                repetition_penalty=1.1,
+                do_sample=True,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
 
-        # Decode and return response
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Decode the output
+        full_response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        # Extract just the assistant's response
+        response_parts = full_response.split("<|assistant|>")
+        response = response_parts[-1].strip()
+
         return response
 
     def chat(self):

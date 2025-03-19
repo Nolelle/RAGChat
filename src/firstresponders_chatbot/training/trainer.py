@@ -12,14 +12,16 @@ from typing import Optional, Dict, Any, List, Tuple
 import torch
 import numpy as np
 from transformers import (
-    AutoModelForSeq2SeqLM,
+    AutoModelForCausalLM,
     AutoTokenizer,
-    Seq2SeqTrainingArguments,
-    Seq2SeqTrainer,
-    DataCollatorForSeq2Seq,
+    TrainingArguments,
+    Trainer,
+    DataCollatorForLanguageModeling,
+    BitsAndBytesConfig,
 )
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
 from datasets import Dataset, load_dataset
-import evaluate  # Import evaluate package for metrics
+import evaluate
 from nltk.tokenize import word_tokenize, sent_tokenize
 import re
 import random
@@ -48,23 +50,27 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_name: str = "google/flan-t5-small",
+        model_name: str = "microsoft/Phi-3-mini-4k-instruct",
         dataset_path: str = "data/pseudo_data.json",
-        output_dir: str = "flan-t5-first-responder",
-        batch_size: int = 1,  # Reduced batch size for larger models
-        learning_rate: float = 3e-5,  # Slightly lower learning rate
-        num_train_epochs: int = 8,  # More epochs for better learning
-        max_source_length: int = 384,
-        max_target_length: int = 96,
+        output_dir: str = "phi-3-mini-first-responder",
+        batch_size: int = 1,
+        learning_rate: float = 2e-4,
+        num_train_epochs: int = 3,
+        max_seq_length: int = 2048,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
-        gradient_accumulation_steps: int = 32,  # Increased for memory efficiency
+        gradient_accumulation_steps: int = 16,
         fp16: bool = True,
-        freeze_encoder: bool = False,  # Option to freeze encoder layers
-        load_in_8bit: bool = True,  # Enable 8-bit quantization
+        load_in_4bit: bool = True,
+        lora_r: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.05,
+        max_train_samples: Optional[
+            int
+        ] = None,  # Added parameter for limiting training data
     ):
         """
-        Initialize the ModelTrainer.
+        Initialize the ModelTrainer with parameters suitable for Phi-3.
 
         Args:
             model_name: Name of the pre-trained model to use
@@ -73,14 +79,16 @@ class ModelTrainer:
             batch_size: Batch size for training
             learning_rate: Learning rate for training
             num_train_epochs: Number of epochs to train for
-            max_source_length: Maximum length of the source sequences
-            max_target_length: Maximum length of the target sequences
+            max_seq_length: Maximum length of sequences
             weight_decay: Weight decay for regularization
             warmup_ratio: Ratio of total training steps used for learning rate warmup
             gradient_accumulation_steps: Number of steps to accumulate gradients before performing an update
             fp16: Whether to use mixed precision training
-            freeze_encoder: Whether to freeze the encoder layers
-            load_in_8bit: Whether to load model in 8-bit precision
+            load_in_4bit: Whether to load model in 4-bit precision
+            lora_r: Rank of the LoRA update matrices
+            lora_alpha: Scaling factor for LoRA
+            lora_dropout: Dropout probability for LoRA layers
+            max_train_samples: Maximum number of samples to use for training (for faster development)
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -88,16 +96,20 @@ class ModelTrainer:
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.num_train_epochs = num_train_epochs
-        self.max_source_length = max_source_length
-        self.max_target_length = max_target_length
+        self.max_seq_length = max_seq_length
         self.weight_decay = weight_decay
         self.warmup_ratio = warmup_ratio
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.fp16 = fp16
-        self.freeze_encoder = freeze_encoder
-        self.load_in_8bit = load_in_8bit
+        self.load_in_4bit = load_in_4bit
+        self.max_train_samples = max_train_samples
 
-        # Check if CUDA is available
+        # LoRA parameters
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+
+        # Check for hardware acceleration
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             self.device = torch.device("mps")
             logger.info(f"Using Apple Silicon acceleration (MPS)")
@@ -166,268 +178,336 @@ class ModelTrainer:
             if len(dataset) > 0:
                 logger.info(f"Dataset sample: {dataset[0]}")
 
+            # Limit training data if specified (for faster training)
+            if (
+                self.max_train_samples is not None
+                and len(dataset) > self.max_train_samples
+            ):
+                logger.info(
+                    f"Limiting dataset to {self.max_train_samples} examples for faster training"
+                )
+                # Shuffle dataset before taking a subset to ensure good representation
+                dataset = dataset.shuffle(seed=42).select(range(self.max_train_samples))
+                logger.info(f"Dataset reduced to {len(dataset)} examples")
+
             return dataset
         except Exception as e:
             logger.error(f"Error loading dataset: {e}")
             raise
 
-    def preprocess_data(self, dataset: Dataset) -> Dataset:
+    def format_dataset(self, dataset: Dataset) -> Dataset:
         """
-        Preprocess the dataset for training.
-
-        Args:
-            dataset: The dataset to preprocess
-
-        Returns:
-            The preprocessed dataset
+        Format the dataset for Phi-3 causal language model training.
         """
-        logger.info("Preprocessing dataset")
-
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        logger.info("Formatting dataset for Phi-3")
 
         # Identify input and target columns
         input_col, target_col = self._identify_dataset_columns(dataset)
-        logger.info(
-            f"Using columns for preprocessing: input={input_col}, target={target_col}"
-        )
+        logger.info(f"Using columns: input={input_col}, target={target_col}")
 
-        # Log dataset sample for debugging
-        if len(dataset) > 0:
-            sample = dataset[0]
-            logger.info(
-                f"Sample example - {input_col}: {sample[input_col][:100]}..., {target_col}: {sample[target_col][:100]}..."
-            )
+        def format_prompt(question, answer):
+            """Format the prompt and response in Phi-3's expected format."""
+            # Extract actual question from the context+question format
+            if "Context:" in question and "Question:" in question:
+                # Split out just the question part if we're in the RAG format
+                parts = question.split("Question:")
+                if len(parts) > 1:
+                    actual_question = parts[1].strip()
+                else:
+                    actual_question = question
+            else:
+                actual_question = question
 
-        def preprocess_function(examples):
-            # Extract inputs and targets directly from identified columns
+            # Format in Phi-3's expected chat format
+            return f"""<|system|>
+You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials.
+<|user|>
+{actual_question}
+<|assistant|>
+{answer}"""
+
+        # Check if the dataset already has a 'text' column
+        if "text" in dataset.column_names:
+            logger.info("Dataset already has a 'text' column, using it directly")
+            return dataset
+
+        def format_samples(examples):
+            """Process a batch of examples into formatted prompts."""
             inputs = examples[input_col]
             targets = examples[target_col]
 
-            # Log length statistics
-            if isinstance(inputs, list) and len(inputs) > 0:
-                input_lengths = [len(inp.split()) for inp in inputs]
-                target_lengths = [len(tgt.split()) for tgt in targets]
-                logger.info(
-                    f"Input length stats: min={min(input_lengths)}, max={max(input_lengths)}, avg={sum(input_lengths)/len(input_lengths):.1f}"
-                )
-                logger.info(
-                    f"Target length stats: min={min(target_lengths)}, max={max(target_lengths)}, avg={sum(target_lengths)/len(target_lengths):.1f}"
-                )
+            formatted_texts = []
+            for q, a in zip(inputs, targets):
+                formatted_texts.append(format_prompt(q, a))
 
-            # Tokenize inputs
-            model_inputs = tokenizer(
-                inputs,
-                max_length=self.max_source_length,
-                padding="max_length",
-                truncation=True,
-            )
+            return {"text": formatted_texts}
 
-            # Setup the tokenizer for targets
-            with tokenizer.as_target_tokenizer():
-                labels = tokenizer(
-                    targets,
-                    max_length=self.max_target_length,
-                    padding="max_length",
-                    truncation=True,
-                )
-
-            # Replace padding token id with -100 in labels for loss masking
-            labels_with_ignore = []
-            for label in labels["input_ids"]:
-                # Replace padding token id with -100
-                label_with_ignore = [
-                    -100 if token == tokenizer.pad_token_id else token
-                    for token in label
-                ]
-                labels_with_ignore.append(label_with_ignore)
-
-            model_inputs["labels"] = labels_with_ignore
-            return model_inputs
-
-        # Process the dataset - crucially this removes all original columns and
-        # replaces them with tokenized versions
-        processed_dataset = dataset.map(
-            preprocess_function,
+        # Apply formatting to create prompts in Phi-3 format
+        formatted_dataset = dataset.map(
+            format_samples,
             batched=True,
-            remove_columns=dataset.column_names,  # Critical: remove original columns
-            desc="Tokenizing dataset",
-            num_proc=1,  # Single process to avoid conflicts
+            remove_columns=dataset.column_names,
+            desc="Formatting prompts",
         )
 
-        # Log processed dataset info
-        logger.info(f"Processed dataset columns: {processed_dataset.column_names}")
-        logger.info(f"Processed dataset size: {len(processed_dataset)}")
+        # Show a sample of the formatted data
+        if len(formatted_dataset) > 0:
+            logger.info(
+                f"Sample formatted prompt: \n{formatted_dataset[0]['text'][:500]}..."
+            )
 
-        return processed_dataset
+        return formatted_dataset
+
+    def load_and_prepare_model(self):
+        """
+        Load and prepare the Phi-3 Mini model with quantization and LoRA.
+        """
+        logger.info(f"Loading model: {self.model_name}")
+
+        # Configure quantization
+        quantization_config = None
+
+        # Check if we're on Apple Silicon (MPS)
+        is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+        # Check for CPU only mode
+        is_cpu_only = not torch.cuda.is_available() and not is_mps
+
+        # Load model with appropriate settings based on hardware
+        if is_mps:
+            logger.info("Using Apple Silicon (MPS) with reduced memory footprint")
+            # For MPS backend, use lower precision and memory optimization
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                torch_dtype=torch.float16,
+                use_cache=False,  # Disable KV cache to save memory during training
+            )
+            # Enable gradient checkpointing to reduce memory usage
+            model.gradient_checkpointing_enable()
+
+            # Further reduce sequence length for faster training
+            actual_max_len = min(self.max_seq_length, 512)
+            logger.info(
+                f"Reducing max sequence length to {actual_max_len} for faster training"
+            )
+            self.max_seq_length = actual_max_len
+
+        elif self.load_in_4bit and not is_cpu_only:
+            logger.info("Using 4-bit quantization")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=quantization_config,
+                device_map="auto",
+                torch_dtype=torch.float16,
+            )
+        else:
+            # CPU or other device without quantization
+            logger.info("Using standard precision")
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                torch_dtype=torch.float16 if self.fp16 else torch.float32,
+            )
+
+        # Load tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+
+        # Set padding token if not set
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        # Prepare model for k-bit training if using quantization
+        if self.load_in_4bit and not is_mps and not is_cpu_only:
+            model = prepare_model_for_kbit_training(model)
+
+        # Configure LoRA with fewer target modules and smaller rank for faster training
+        logger.info("Applying optimized LoRA configuration for faster training")
+
+        # Get a list of model modules to find the correct target names
+        target_modules = []
+        # Search for common attention module names in Phi-3
+        for name, _ in model.named_modules():
+            if any(pattern in name for pattern in ["attention", "mlp"]):
+                logger.info(f"Found potential module: {name}")
+
+        # Use correct module names for Phi-3
+        lora_config = LoraConfig(
+            r=8,  # Reduced from 16 to 8
+            lora_alpha=16,  # Reduced from 32 to 16
+            target_modules=[
+                "qkv_proj",
+                "mlp.gate_proj",
+            ],  # Module names that actually exist in Phi-3
+            lora_dropout=0.05,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+
+        # Apply LoRA to model
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()  # Log info about trainable parameters
+
+        return model, tokenizer
 
     def train(
         self, train_dataset: Dataset, eval_dataset: Optional[Dataset] = None
     ) -> None:
         """
-        Train the model.
-
-        Args:
-            train_dataset: Training dataset
-            eval_dataset: Evaluation dataset
+        Train the Phi-3 model using QLoRA.
         """
         logger.info("Starting model training")
 
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        # Load and prepare model
+        model, tokenizer = self.load_and_prepare_model()
 
-        # Verify dataset format is correct
-        logger.info(f"Training dataset columns: {train_dataset.column_names}")
-        expected_columns = ["input_ids", "attention_mask", "labels"]
-
-        # Only convert if needed - prefer using preprocess_data first
-        missing_columns = [
-            col for col in expected_columns if col not in train_dataset.column_names
-        ]
-        if missing_columns:
-            logger.warning(f"Dataset missing expected columns: {missing_columns}")
-            logger.info("Converting dataset format automatically")
-            train_dataset = self._convert_dataset_format(train_dataset, tokenizer)
-            if eval_dataset is not None:
-                eval_dataset = self._convert_dataset_format(eval_dataset, tokenizer)
-        else:
-            logger.info(
-                "Dataset already in the correct format with input_ids and labels"
-            )
-
-        # Quantization config for memory efficiency
-        quantization_config = None
-        if (
-            self.load_in_8bit
-            and "mps" not in str(self.device)
-            and BITSANDBYTES_AVAILABLE
-        ):  # 8-bit not fully supported on MPS
-            logger.info("Loading model in 8-bit precision")
-            quantization_config = {"load_in_8bit": True}
-        elif self.load_in_8bit:
-            logger.warning(
-                "8-bit quantization requested but not available - continuing with standard precision"
-            )
-
-        # Load model
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            self.model_name, **(quantization_config if quantization_config else {})
+        # Format datasets
+        formatted_train_dataset = self.format_dataset(train_dataset)
+        formatted_eval_dataset = (
+            self.format_dataset(eval_dataset) if eval_dataset is not None else None
         )
 
-        # Configure memory optimization settings
-        use_mps = torch.backends.mps.is_available()
+        # Debug dataset structure
+        logger.info(
+            f"Formatted train dataset columns: {formatted_train_dataset.column_names}"
+        )
+        logger.info(f"Sample entry: {formatted_train_dataset[0]}")
 
-        # Create training arguments
-        gradient_checkpointing = False
-        if not self.freeze_encoder:
-            # Only use gradient checkpointing for full model training
-            gradient_checkpointing = True
-            logger.info("Enabling gradient checkpointing")
-            if hasattr(model, "gradient_checkpointing_enable"):
-                model.gradient_checkpointing_enable()
-        else:
-            logger.info("Gradient checkpointing disabled (using frozen encoder)")
+        # Tokenize the datasets
+        def tokenize_function(examples):
+            # Ensure we're working with flat strings, not nested lists
+            if "text" in examples:
+                texts = examples["text"]
+                if isinstance(texts, list) and len(texts) > 0:
+                    if isinstance(texts[0], list):
+                        logger.warning("Found nested lists in text data, flattening")
+                        texts = [
+                            (
+                                item[0]
+                                if isinstance(item, list) and len(item) > 0
+                                else item
+                            )
+                            for item in texts
+                        ]
 
-        # Freeze encoder if requested
-        if self.freeze_encoder:
-            logger.info("Freezing encoder layers")
-            for param in model.encoder.parameters():
-                param.requires_grad = False
+                # Check for Apple Silicon (MPS) to use stricter truncation
+                is_mps = (
+                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+                )
+                max_length = (
+                    min(self.max_seq_length, 1024) if is_mps else self.max_seq_length
+                )
 
-        # Move model to device
-        model = model.to(self.device)
+                # Create a new dictionary with only the tokenized text
+                # This avoids any other potentially nested fields
+                result = tokenizer(
+                    texts,
+                    truncation=True,
+                    max_length=max_length,
+                    padding="max_length",
+                    return_tensors=None,  # Return list of integers, not tensors yet
+                )
 
-        # Create data collator
-        data_collator = DataCollatorForSeq2Seq(
+                # If labels are needed for causal LM, copy input_ids to labels
+                result["labels"] = result["input_ids"].copy()
+
+                return result
+            else:
+                raise ValueError(f"Expected 'text' column but found: {examples.keys()}")
+
+        # Process datasets
+        logger.info("Tokenizing datasets")
+        tokenized_train_dataset = formatted_train_dataset.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=formatted_train_dataset.column_names,  # Remove all original columns
+            desc="Tokenizing training dataset",
+        )
+
+        # Log sample tokenized data
+        logger.info(
+            f"Tokenized train dataset columns: {tokenized_train_dataset.column_names}"
+        )
+        logger.info(f"Tokenized sample: {tokenized_train_dataset[0]}")
+
+        tokenized_eval_dataset = None
+        if formatted_eval_dataset is not None:
+            tokenized_eval_dataset = formatted_eval_dataset.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=formatted_eval_dataset.column_names,  # Remove all original columns
+                desc="Tokenizing evaluation dataset",
+            )
+
+        # Create a data collator for language modeling
+        data_collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
-            model=model,
-            padding="longest",
+            mlm=False,  # We're doing causal LM, not masked LM
+            pad_to_multiple_of=(
+                8 if self.fp16 else None
+            ),  # For efficient tensor operations
         )
 
-        # Load metrics
-        rouge_metric = evaluate.load("rouge")
-        bleu_metric = evaluate.load("bleu")
+        # Check for Apple Silicon (MPS)
+        is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
-        # Define compute metrics function
-        def compute_metrics(eval_preds):
-            preds, labels = eval_preds
-            if isinstance(preds, tuple):
-                preds = preds[0]
+        # Use smaller batch size on MPS
+        actual_batch_size = 1 if is_mps else self.batch_size
 
-            # Replace -100 with pad token id
-            labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        # Set shorter training for faster completion
+        actual_epochs = 1  # Reduce to just 1 epoch
 
-            # Decode predictions and labels
-            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-            # Normalize whitespace
-            decoded_preds = [pred.strip() for pred in decoded_preds]
-            decoded_labels = [label.strip() for label in decoded_labels]
-
-            # Initialize metrics
-            rouge_scorer = evaluate.load("rouge")
-
-            # Compute ROUGE
-            result = rouge_scorer.compute(
-                predictions=decoded_preds, references=decoded_labels, use_stemmer=True
-            )
-
-            # Extract ROUGE scores - handle both old and new ROUGE implementation
-            results = {}
-            for k, v in result.items():
-                # Handle different versions of ROUGE metrics
-                if hasattr(v, "mid"):
-                    # Old version
-                    results[k] = v.mid.fmeasure * 100
-                elif isinstance(v, float):
-                    # New version - directly returns float values
-                    results[k] = v * 100
-                else:
-                    # Unexpected type
-                    results[k] = 0.0
-                    logger.warning(f"Unexpected type for ROUGE metric {k}: {type(v)}")
-
-            # Add prediction length
-            prediction_lens = [len(pred.split()) for pred in decoded_preds]
-            results["gen_len"] = np.mean(prediction_lens)
-
-            return results
+        logger.info(
+            f"Using accelerated training settings: {actual_epochs} epochs with batch size {actual_batch_size}"
+        )
 
         # Define training arguments
-        training_args = Seq2SeqTrainingArguments(
+        training_args = TrainingArguments(
             output_dir=self.output_dir,
-            per_device_train_batch_size=self.batch_size,
-            per_device_eval_batch_size=self.batch_size,
-            learning_rate=self.learning_rate,
-            weight_decay=self.weight_decay,
-            warmup_ratio=self.warmup_ratio,
-            num_train_epochs=self.num_train_epochs,
-            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            per_device_train_batch_size=actual_batch_size,
+            per_device_eval_batch_size=actual_batch_size,
+            gradient_accumulation_steps=(
+                8 if is_mps else self.gradient_accumulation_steps
+            ),  # Reduced accumulation for speed
+            learning_rate=self.learning_rate
+            * 2,  # Higher learning rate for faster convergence
+            num_train_epochs=actual_epochs,  # Just 1 epoch for faster training
+            weight_decay=0.0,  # Disable weight decay for speed
             fp16=self.fp16
-            and "mps" not in str(self.device),  # fp16 not fully supported on MPS
+            and not is_mps,  # MPS doesn't need this flag as we handle it separately
+            warmup_ratio=0.03,  # Shorter warmup
             logging_dir=f"{self.output_dir}/logs",
-            logging_steps=50,
+            logging_steps=10,  # More frequent logging
             save_strategy="epoch",
-            evaluation_strategy="epoch" if eval_dataset is not None else "no",
-            save_total_limit=2,
-            predict_with_generate=True,
-            generation_max_length=self.max_target_length,
-            generation_num_beams=4,
-            load_best_model_at_end=True if eval_dataset is not None else False,
-            metric_for_best_model="rouge1" if eval_dataset is not None else None,
-            greater_is_better=True,
-            remove_unused_columns=False,  # Important to prevent column mismatch errors
+            evaluation_strategy="epoch" if tokenized_eval_dataset is not None else "no",
+            save_total_limit=1,  # Save less checkpoints
+            load_best_model_at_end=tokenized_eval_dataset is not None,
+            optim="adamw_torch",  # Use adamw_torch optimizer
+            bf16=False,  # bfloat16 precision typically not supported on consumer hardware
+            remove_unused_columns=False,  # Important for custom formatting
+            gradient_checkpointing=True,  # Enable gradient checkpointing
+            dataloader_num_workers=0,  # Avoid DataLoader workers for simpler processing
+            group_by_length=True,  # Group sequences of similar length for efficiency
+            ddp_find_unused_parameters=False,  # Speed up training
+            do_eval=tokenized_eval_dataset is not None,
+            no_cuda=True if is_mps else False,  # Ensure we use MPS on Apple Silicon
+            report_to="none",  # Skip reporting to save time
         )
 
         # Create trainer
-        trainer = Seq2SeqTrainer(
+        trainer = Trainer(
             model=model,
             args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
+            train_dataset=tokenized_train_dataset,
+            eval_dataset=tokenized_eval_dataset,
             data_collator=data_collator,
             tokenizer=tokenizer,
-            compute_metrics=compute_metrics if eval_dataset is not None else None,
         )
 
         # Train the model
@@ -439,122 +519,101 @@ class ModelTrainer:
         trainer.save_model(self.output_dir)
         tokenizer.save_pretrained(self.output_dir)
 
-    def _convert_dataset_format(self, dataset: Dataset, tokenizer) -> Dataset:
-        """
-        Convert a dataset with columns like 'input'/'output' to the expected format with 'input_ids'/'labels'.
-
-        Args:
-            dataset: The dataset to convert
-            tokenizer: The tokenizer to use for conversion
-
-        Returns:
-            Converted dataset with proper format
-        """
-        logger.info(f"Converting dataset with columns: {dataset.column_names}")
-
-        # Identify input and target columns
-        input_col, target_col = self._identify_dataset_columns(dataset)
-        logger.info(f"Identified columns: input={input_col}, target={target_col}")
-
-        def convert_function(examples):
-            # Extract inputs and targets
-            inputs = examples[input_col]
-            targets = examples[target_col]
-
-            # Tokenize inputs
-            model_inputs = tokenizer(
-                inputs,
-                max_length=self.max_source_length,
-                padding="max_length",
-                truncation=True,
-            )
-
-            # Tokenize targets
-            with tokenizer.as_target_tokenizer():
-                labels = tokenizer(
-                    targets,
-                    max_length=self.max_target_length,
-                    padding="max_length",
-                    truncation=True,
-                )
-
-            # Replace padding token id with -100 in labels
-            labels_with_ignore = []
-            for label in labels["input_ids"]:
-                label_with_ignore = [
-                    -100 if token == tokenizer.pad_token_id else token
-                    for token in label
-                ]
-                labels_with_ignore.append(label_with_ignore)
-
-            model_inputs["labels"] = labels_with_ignore
-            return model_inputs
-
-        # Apply conversion
-        converted_dataset = dataset.map(
-            convert_function,
-            batched=True,
-            remove_columns=dataset.column_names,
-            desc="Converting dataset format",
-            num_proc=1,  # Use single process to avoid potential conflicts
-        )
-
-        logger.info(f"Converted dataset columns: {converted_dataset.column_names}")
-        return converted_dataset
+        # Save LoRA adapter separately for easier loading
+        model.save_pretrained(os.path.join(self.output_dir, "adapter"))
+        logger.info(f"Saved LoRA adapter to {os.path.join(self.output_dir, 'adapter')}")
 
     def _identify_dataset_columns(self, dataset: Dataset) -> Tuple[str, str]:
         """
         Identify the input and target columns in the dataset.
 
+        This method attempts to identify the input and target columns in the dataset
+        by looking for common column names or patterns.
+
         Args:
             dataset: The dataset to analyze
 
         Returns:
-            Tuple of (input_column, target_column)
+            tuple: (input_column_name, target_column_name)
         """
+        # List of common names for input and target columns
+        input_names = [
+            "input",
+            "inputs",
+            "source",
+            "question",
+            "context",
+            "premise",
+            "instruction",
+            "query",
+            "prompt",
+        ]
+        target_names = [
+            "target",
+            "targets",
+            "output",
+            "outputs",
+            "answer",
+            "response",
+            "label",
+            "labels",
+            "hypothesis",
+            "completion",
+        ]
+
+        # Get column names from dataset
         columns = dataset.column_names
-        logger.info(f"Dataset column names: {columns}")
 
-        # Log a sample to help with debugging
-        if len(dataset) > 0:
-            logger.info(f"Dataset sample: {dataset[0]}")
+        # Try to find input column
+        input_col = None
+        for name in input_names:
+            if name in columns:
+                input_col = name
+                break
 
-        # Check for standard column patterns
-        if "question" in columns and "answer" in columns:
-            return "question", "answer"
-        elif "input" in columns and "output" in columns:
-            return "input", "output"
-        elif "source" in columns and "target" in columns:
-            return "source", "target"
-        elif "prompt" in columns and "completion" in columns:
-            return "prompt", "completion"
-        elif "text" in columns and "labels" in columns:
-            return "text", "labels"
+        # Try to find target column
+        target_col = None
+        for name in target_names:
+            if name in columns:
+                target_col = name
+                break
 
-        # Default to first two columns
-        if len(columns) >= 2:
-            logger.warning(
-                f"Using first two columns as input/output: {columns[0]}, {columns[1]}"
+        # If we still haven't found the columns, make a best guess
+        if input_col is None or target_col is None:
+            if len(columns) == 2:
+                # If there are exactly two columns, assume the first is input
+                # and the second is target
+                input_col = columns[0]
+                target_col = columns[1]
+            else:
+                # Try to find columns with common patterns
+                for col in columns:
+                    col_lower = col.lower()
+                    if any(name in col_lower for name in input_names):
+                        input_col = col
+                    elif any(name in col_lower for name in target_names):
+                        target_col = col
+
+        # Raise an error if we couldn't identify the columns
+        if input_col is None or target_col is None:
+            raise ValueError(
+                f"Could not identify input and target columns in dataset. "
+                f"Available columns: {columns}"
             )
-            return columns[0], columns[1]
-        elif len(columns) == 1:
-            logger.warning(
-                f"Only one column found ({columns[0]}), using it for both input and output"
-            )
-            return columns[0], columns[0]
-        else:
-            raise ValueError("Dataset has no columns")
+
+        return input_col, target_col
 
     def run(self) -> None:
-        """Run the complete training pipeline."""
-        # Create output directory if it doesn't exist
-        os.makedirs(self.output_dir, exist_ok=True)
-
-        # Load and preprocess the dataset
+        """
+        Run the complete training pipeline.
+        """
+        # Load dataset
         dataset = self.load_dataset()
-        processed_dataset = self.preprocess_data(dataset)
+
+        # Split dataset into train and evaluation sets
+        split = dataset.train_test_split(test_size=0.1, seed=42)
+        train_dataset = split["train"]
+        eval_dataset = split["test"]
 
         # Train the model
-        self.train(processed_dataset)
-
-        logger.info("Training completed successfully!")
+        self.train(train_dataset=train_dataset, eval_dataset=eval_dataset)
