@@ -1,7 +1,7 @@
 [project]
 name = "firstresponders-chatbot"
 version = "0.1.0"
-description = "A RAG-based chatbot for firefighters and first responders using Haystack 2.0 and Flan-T5-Small"
+description = "A RAG-based chatbot for firefighters and first responders using Llama 3.1 1B and Phi-3 Mini models"
 requires-python = ">=3.12"
 authors = [{ name = "Edmund Yu" }]
 dependencies = [

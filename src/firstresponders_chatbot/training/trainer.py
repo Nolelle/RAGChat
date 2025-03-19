@@ -68,9 +68,10 @@ class ModelTrainer:
         max_train_samples: Optional[
             int
         ] = None,  # Added parameter for limiting training data
+        use_8bit_optimizer: bool = True,  # Control 8-bit optimizer usage
     ):
         """
-        Initialize the ModelTrainer with parameters suitable for Phi-3.
+        Initialize the ModelTrainer with parameters suitable for Phi-3 or Llama.
 
         Args:
             model_name: Name of the pre-trained model to use
@@ -89,6 +90,7 @@ class ModelTrainer:
             lora_alpha: Scaling factor for LoRA
             lora_dropout: Dropout probability for LoRA layers
             max_train_samples: Maximum number of samples to use for training (for faster development)
+            use_8bit_optimizer: Whether to use 8-bit optimizers (set to False for Apple Silicon)
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -103,6 +105,7 @@ class ModelTrainer:
         self.fp16 = fp16
         self.load_in_4bit = load_in_4bit
         self.max_train_samples = max_train_samples
+        self.use_8bit_optimizer = use_8bit_optimizer and BITSANDBYTES_AVAILABLE
 
         # LoRA parameters
         self.lora_r = lora_r
@@ -113,12 +116,16 @@ class ModelTrainer:
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             self.device = torch.device("mps")
             logger.info(f"Using Apple Silicon acceleration (MPS)")
+            # Force disable 8-bit optimizer on Apple Silicon as it's not compatible
+            self.use_8bit_optimizer = False
         elif torch.cuda.is_available():
             self.device = torch.device("cuda")
             logger.info(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
         else:
             self.device = torch.device("cpu")
             logger.info("No GPU detected, using CPU (this might be slower)")
+            # Force disable 8-bit optimizer on CPU as it's not needed
+            self.use_8bit_optimizer = False
 
     def load_dataset(self) -> Dataset:
         """
@@ -275,8 +282,11 @@ You are a first responders chatbot designed to provide accurate information abou
 
         # Load model with appropriate settings based on hardware
         if is_mps:
-            logger.info("Using Apple Silicon (MPS) with reduced memory footprint")
-            # For MPS backend, use lower precision and memory optimization
+            logger.info(
+                "Using Apple Silicon (MPS) - disabling quantization for compatibility"
+            )
+            quantization_config = None
+            self.load_in_4bit = False
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 device_map="auto",
@@ -330,24 +340,32 @@ You are a first responders chatbot designed to provide accurate information abou
         # Configure LoRA with fewer target modules and smaller rank for faster training
         logger.info("Applying optimized LoRA configuration for faster training")
 
-        # Get a list of model modules to find the correct target names
-        target_modules = []
-        # Search for common attention module names in Phi-3
-        for name, _ in model.named_modules():
-            if any(pattern in name for pattern in ["attention", "mlp"]):
-                logger.info(f"Found potential module: {name}")
+        # Simplify by using known working target modules for Phi-3 specifically
+        if "Phi-3" in self.model_name:
+            logger.info("Detected Phi-3 model, using known working target modules")
+            # According to Phi-3 model architecture, these are the correct modules
+            target_modules = ["down_proj", "up_proj", "gate_proj"]
+        else:
+            # For other models fallback to generic approach
+            logger.info("Using generic target modules for LoRA")
+            target_modules = [
+                "query_key_value",
+                "dense",
+                "dense_h_to_4h",
+                "dense_4h_to_h",
+            ]
 
-        # Use correct module names for Phi-3
+        logger.info(f"Selected LoRA target modules: {target_modules}")
+
+        # Simplified LoRA config
         lora_config = LoraConfig(
-            r=8,  # Reduced from 16 to 8
-            lora_alpha=16,  # Reduced from 32 to 16
-            target_modules=[
-                "qkv_proj",
-                "mlp.gate_proj",
-            ],  # Module names that actually exist in Phi-3
+            r=8,  # Reduced rank for faster training
+            lora_alpha=16,
+            target_modules=target_modules,
             lora_dropout=0.05,
             bias="none",
             task_type=TaskType.CAUSAL_LM,
+            modules_to_save=["lm_head"],  # Save the LM head for generation
         )
 
         # Apply LoRA to model
@@ -359,27 +377,158 @@ You are a first responders chatbot designed to provide accurate information abou
     def train(
         self, train_dataset: Dataset, eval_dataset: Optional[Dataset] = None
     ) -> None:
+        """Train the model on the given datasets.
+
+        Args:
+            train_dataset: Dataset to train on
+            eval_dataset: Optional dataset to evaluate on during training
         """
-        Train the Phi-3 model using QLoRA.
-        """
+        # Log start of training process
         logger.info("Starting model training")
+        logger.info("Loading and preparing model...")
 
-        # Load and prepare model
-        model, tokenizer = self.load_and_prepare_model()
+        # Load the pre-trained model
+        logger.info(f"Loading model: {self.model_name}")
 
-        # Format datasets
-        formatted_train_dataset = self.format_dataset(train_dataset)
-        formatted_eval_dataset = (
-            self.format_dataset(eval_dataset) if eval_dataset is not None else None
+        # Check if Apple Silicon is available
+        is_apple_silicon = (
+            hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
         )
 
-        # Debug dataset structure
+        # Set device based on availability
+        if is_apple_silicon:
+            logger.info("Apple Silicon (M4 Pro) detected - using MPS")
+            device_choice = "mps"
+            # Disable quantization for M-series chip training
+            logger.info("Adapting configuration for Apple Silicon")
+            quantization_config = None
+            self.load_in_4bit = False
+            use_8bit = False
+        elif torch.cuda.is_available():
+            device_choice = "cuda"
+            # Set up quantization for CUDA if requested
+            use_8bit = self.use_8bit_optimizer
+            if self.load_in_4bit and BITSANDBYTES_AVAILABLE:
+                logger.info("Using 4-bit quantization")
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                )
+            else:
+                quantization_config = None
+        else:
+            logger.info("No GPU detected, using CPU (this might be slower)")
+            device_choice = "cpu"
+            quantization_config = None
+            self.load_in_4bit = False
+            use_8bit = False
+
+        # Check if we're using Llama model
+        is_llama_model = "llama" in self.model_name.lower()
+
+        # Set torch dtype based on model and hardware
+        if is_apple_silicon:
+            # Use float16 for efficient MPS training on Apple Silicon
+            model_dtype = torch.float16 if self.fp16 else torch.float32
+        else:
+            # Use bfloat16 for Llama on other hardware as it works better
+            model_dtype = (
+                torch.bfloat16
+                if is_llama_model and self.fp16
+                else torch.float16 if self.fp16 else torch.float32
+            )
+
+        # Load model with appropriate configuration
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            quantization_config=quantization_config,
+            torch_dtype=model_dtype,
+            trust_remote_code=True,
+            device_map=(
+                device_choice if device_choice != "mps" else "auto"
+            ),  # mps needs special handling
+        )
+
+        # Move model to MPS device if using Apple Silicon
+        if device_choice == "mps":
+            model = model.to("mps")
+
+        # Load tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+
+        # Set padding token if not set
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        # Configure appropriate LoRA settings based on model architecture
+        if is_llama_model:
+            # Target attention modules for Llama
+            logger.info("Configuring LoRA for Llama model")
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        else:
+            # Target attention modules for Phi-3 (and others)
+            target_modules = [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ]
+
+        # Apply PEFT configuration
+        if not self.load_in_4bit:
+            model = prepare_model_for_kbit_training(model)
+
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=self.lora_r,
+            lora_alpha=self.lora_alpha,
+            lora_dropout=self.lora_dropout,
+            target_modules=target_modules,
+            bias="none",
+        )
+
+        model = get_peft_model(model, peft_config)
+
+        logger.info(f"Model has {model.num_parameters()} parameters")
+        model.print_trainable_parameters()
+
+        # Format datasets based on model type
+        logger.info("Formatting datasets for training")
+
+        # Check and identify input/target columns
+        input_col, target_col = self._identify_dataset_columns(train_dataset)
         logger.info(
-            f"Formatted train dataset columns: {formatted_train_dataset.column_names}"
+            f"Using '{input_col}' as input column and '{target_col}' as target column"
         )
-        logger.info(f"Sample entry: {formatted_train_dataset[0]}")
 
-        # Tokenize the datasets
+        # Handle dataset formatting for different model types
+        if is_llama_model:
+            logger.info("Formatting dataset for Llama 3.1")
+            formatted_train_dataset = self._format_dataset_for_llama(
+                train_dataset, input_col, target_col
+            )
+            formatted_eval_dataset = None
+            if eval_dataset is not None:
+                formatted_eval_dataset = self._format_dataset_for_llama(
+                    eval_dataset, input_col, target_col
+                )
+        else:
+            # Use existing formatting for Phi-3 or other models
+            formatted_train_dataset = self._format_dataset_for_phi3(
+                train_dataset, input_col, target_col
+            )
+            formatted_eval_dataset = None
+            if eval_dataset is not None:
+                formatted_eval_dataset = self._format_dataset_for_phi3(
+                    eval_dataset, input_col, target_col
+                )
+
+        # Tokenization function
         def tokenize_function(examples):
             # Ensure we're working with flat strings, not nested lists
             if "text" in examples:
@@ -396,13 +545,14 @@ You are a first responders chatbot designed to provide accurate information abou
                             for item in texts
                         ]
 
-                # Check for Apple Silicon (MPS) to use stricter truncation
-                is_mps = (
-                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-                )
-                max_length = (
-                    min(self.max_seq_length, 1024) if is_mps else self.max_seq_length
-                )
+                # Adjust max_length based on available memory and hardware
+                if is_apple_silicon:
+                    # M4 Pro with 24GB can handle larger sequences
+                    max_length = min(self.max_seq_length, 1024)
+                else:
+                    max_length = min(self.max_seq_length, 512)
+
+                logger.info(f"Using max_length={max_length} for tokenization")
 
                 # Create a new dictionary with only the tokenized text
                 # This avoids any other potentially nested fields
@@ -422,13 +572,14 @@ You are a first responders chatbot designed to provide accurate information abou
                 raise ValueError(f"Expected 'text' column but found: {examples.keys()}")
 
         # Process datasets
-        logger.info("Tokenizing datasets")
+        logger.info("Tokenizing train dataset...")
         tokenized_train_dataset = formatted_train_dataset.map(
             tokenize_function,
             batched=True,
             remove_columns=formatted_train_dataset.column_names,  # Remove all original columns
             desc="Tokenizing training dataset",
         )
+        logger.info("Train dataset tokenized successfully")
 
         # Log sample tokenized data
         logger.info(
@@ -438,69 +589,77 @@ You are a first responders chatbot designed to provide accurate information abou
 
         tokenized_eval_dataset = None
         if formatted_eval_dataset is not None:
+            logger.info("Tokenizing eval dataset...")
             tokenized_eval_dataset = formatted_eval_dataset.map(
                 tokenize_function,
                 batched=True,
                 remove_columns=formatted_eval_dataset.column_names,  # Remove all original columns
                 desc="Tokenizing evaluation dataset",
             )
+            logger.info("Eval dataset tokenized successfully")
 
         # Create a data collator for language modeling
+        logger.info("Creating data collator...")
         data_collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
             mlm=False,  # We're doing causal LM, not masked LM
-            pad_to_multiple_of=(
-                8 if self.fp16 else None
-            ),  # For efficient tensor operations
         )
+        logger.info("Data collator created")
 
-        # Check for Apple Silicon (MPS)
-        is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        # Adjust batch size based on model and hardware
+        if is_apple_silicon:
+            # M4 Pro with 24GB can handle a bit larger batch size
+            actual_batch_size = 2 if is_llama_model else 1
+        else:
+            actual_batch_size = 1
 
-        # Use smaller batch size on MPS
-        actual_batch_size = 1 if is_mps else self.batch_size
-
-        # Set shorter training for faster completion
-        actual_epochs = 1  # Reduce to just 1 epoch
+        # Set training epochs
+        actual_epochs = self.num_train_epochs
 
         logger.info(
-            f"Using accelerated training settings: {actual_epochs} epochs with batch size {actual_batch_size}"
+            f"Using training settings: {actual_epochs} epochs with batch size {actual_batch_size}"
         )
 
-        # Define training arguments
+        # Set up the training arguments
+        logger.info("Setting up training arguments...")
+
+        # Use appropriate optimizer based on hardware
+        if is_apple_silicon:
+            logger.info("Using standard AdamW optimizer for Apple Silicon")
+            optim = "adamw_torch"
+        else:
+            if use_8bit and BITSANDBYTES_AVAILABLE:
+                logger.info("Using 8-bit AdamW optimizer")
+                optim = "adamw_8bit"
+            else:
+                logger.info("Using standard AdamW optimizer")
+                optim = "adamw_torch"
+
+        # Configure training args
         training_args = TrainingArguments(
             output_dir=self.output_dir,
+            num_train_epochs=actual_epochs,
             per_device_train_batch_size=actual_batch_size,
-            per_device_eval_batch_size=actual_batch_size,
-            gradient_accumulation_steps=(
-                8 if is_mps else self.gradient_accumulation_steps
-            ),  # Reduced accumulation for speed
-            learning_rate=self.learning_rate
-            * 2,  # Higher learning rate for faster convergence
-            num_train_epochs=actual_epochs,  # Just 1 epoch for faster training
-            weight_decay=0.0,  # Disable weight decay for speed
-            fp16=self.fp16
-            and not is_mps,  # MPS doesn't need this flag as we handle it separately
-            warmup_ratio=0.03,  # Shorter warmup
-            logging_dir=f"{self.output_dir}/logs",
-            logging_steps=10,  # More frequent logging
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            learning_rate=self.learning_rate,
+            weight_decay=self.weight_decay,
+            warmup_ratio=self.warmup_ratio,
+            evaluation_strategy="epoch" if eval_dataset else "no",
             save_strategy="epoch",
-            evaluation_strategy="epoch" if tokenized_eval_dataset is not None else "no",
-            save_total_limit=1,  # Save less checkpoints
-            load_best_model_at_end=tokenized_eval_dataset is not None,
-            optim="adamw_torch",  # Use adamw_torch optimizer
-            bf16=False,  # bfloat16 precision typically not supported on consumer hardware
-            remove_unused_columns=False,  # Important for custom formatting
-            gradient_checkpointing=True,  # Enable gradient checkpointing
-            dataloader_num_workers=0,  # Avoid DataLoader workers for simpler processing
-            group_by_length=True,  # Group sequences of similar length for efficiency
-            ddp_find_unused_parameters=False,  # Speed up training
-            do_eval=tokenized_eval_dataset is not None,
-            no_cuda=True if is_mps else False,  # Ensure we use MPS on Apple Silicon
-            report_to="none",  # Skip reporting to save time
+            logging_steps=1,
+            logging_dir=os.path.join(self.output_dir, "logs"),
+            save_total_limit=2,
+            load_best_model_at_end=eval_dataset is not None,
+            fp16=self.fp16 and device_choice != "cpu",
+            optim=optim,
+            # Configure for appropriate device
+            use_cpu=device_choice == "cpu",
+            no_cuda=device_choice != "cuda",
         )
+        logger.info("Training arguments set up")
 
         # Create trainer
+        logger.info("Creating trainer...")
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -509,10 +668,20 @@ You are a first responders chatbot designed to provide accurate information abou
             data_collator=data_collator,
             tokenizer=tokenizer,
         )
+        logger.info("Trainer created successfully")
 
         # Train the model
-        logger.info("Training the model")
-        trainer.train()
+        logger.info("Starting training loop...")
+        try:
+            logger.info("Calling trainer.train()")
+            trainer.train()
+            logger.info("Training completed successfully!")
+        except Exception as e:
+            logger.error(f"Error during training: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            raise
 
         # Save the model
         logger.info(f"Saving model to {self.output_dir}")
@@ -521,7 +690,34 @@ You are a first responders chatbot designed to provide accurate information abou
 
         # Save LoRA adapter separately for easier loading
         model.save_pretrained(os.path.join(self.output_dir, "adapter"))
-        logger.info(f"Saved LoRA adapter to {os.path.join(self.output_dir, 'adapter')}")
+
+        logger.info("Model and tokenizer saved successfully")
+
+    def _format_dataset_for_phi3(self, dataset, input_col, target_col):
+        """Format a dataset for Phi-3 training"""
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+
+        def format_example(example):
+            question = example[input_col]
+            answer = example[target_col]
+            return {
+                "text": f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
+            }
+
+        return dataset.map(format_example)
+
+    def _format_dataset_for_llama(self, dataset, input_col, target_col):
+        """Format a dataset for Llama 3.1 training"""
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+
+        def format_example(example):
+            question = example[input_col]
+            answer = example[target_col]
+            return {
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{question} [/INST] {answer}</s>"
+            }
+
+        return dataset.map(format_example)
 
     def _identify_dataset_columns(self, dataset: Dataset) -> Tuple[str, str]:
         """
@@ -614,6 +810,18 @@ You are a first responders chatbot designed to provide accurate information abou
         split = dataset.train_test_split(test_size=0.1, seed=42)
         train_dataset = split["train"]
         eval_dataset = split["test"]
+
+        # Print key information about the training setup
+        print(
+            f"Training on device: {'CUDA' if torch.cuda.is_available() else 'MPS' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'CPU'}"
+        )
+        print(f"Model: {self.model_name}")
+        print(f"Training samples: {len(train_dataset)}")
+        print(f"Evaluation samples: {len(eval_dataset)}")
+        print(f"Max sequence length: {self.max_seq_length}")
+        print(f"Batch size: {self.batch_size}")
+        print(f"Learning rate: {self.learning_rate}")
+        print(f"Starting training now...")
 
         # Train the model
         self.train(train_dataset=train_dataset, eval_dataset=eval_dataset)

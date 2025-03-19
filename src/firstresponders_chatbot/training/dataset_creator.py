@@ -620,6 +620,42 @@ Answer:"""
         logger.info("Formatted data for Phi-3 fine-tuning")
         return formatted_data
 
+    def format_for_llama(
+        self,
+        train_data: List[Dict[str, str]],
+        val_data: List[Dict[str, str]],
+        test_data: List[Dict[str, str]],
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """
+        Format data for Llama 3.1 fine-tuning.
+
+        Args:
+            train_data: Training data
+            val_data: Validation data
+            test_data: Test data
+
+        Returns:
+            Dictionary with formatted data
+        """
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+
+        # Format data for Llama 3.1 with chat template
+        def format_item(item):
+            return {
+                "input": f"{item['question']}",
+                "output": f"{item['answer']}",
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {item['answer']}</s>",
+            }
+
+        formatted_data = {
+            "train": [format_item(item) for item in train_data],
+            "validation": [format_item(item) for item in val_data],
+            "test": [format_item(item) for item in test_data],
+        }
+
+        logger.info("Formatted data for Llama 3.1 fine-tuning")
+        return formatted_data
+
     def save_dataset(self, dataset: Dict[str, List[Dict[str, str]]]) -> None:
         """
         Save dataset to a JSON file.
@@ -663,6 +699,8 @@ Answer:"""
         logger.info(f"Formatting data for {self.model_format} fine-tuning")
         if self.model_format.lower() == "phi-3":
             dataset = self.format_for_phi_3(train_data, val_data, test_data)
+        elif self.model_format.lower() == "llama":
+            dataset = self.format_for_llama(train_data, val_data, test_data)
         else:
             # Default to Flan-T5 format for backward compatibility
             dataset = self.format_for_flan_t5(train_data, val_data, test_data)

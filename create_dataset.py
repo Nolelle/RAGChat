@@ -29,8 +29,8 @@ def parse_args():
         "--model_format",
         type=str,
         default="phi-3",
-        choices=["phi-3", "flan-t5"],
-        help="Format to use for the dataset (phi-3 or flan-t5)",
+        choices=["phi-3", "flan-t5", "llama"],
+        help="Format to use for the dataset (phi-3, flan-t5, or llama)",
     )
     return parser.parse_args()
 

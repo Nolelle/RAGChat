@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Script to train the FirstRespondersChatbot model.
+Script to train the FirstRespondersChatbot model with Llama 3.1 1B.
 """
 
 import sys
 import argparse
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
-from src.firstresponders_chatbot.training.trainer import ModelTrainer
 import logging
 import os
 import torch
@@ -49,13 +48,13 @@ def download_nltk_resources():
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model with Phi-3 Mini or Llama 3.1."
+        description="Train the FirstRespondersChatbot model with Llama 3.1 1B."
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="microsoft/Phi-3-mini-4k-instruct",
-        help="Base model to use (e.g., microsoft/Phi-3-mini-4k-instruct or meta-llama/Meta-Llama-3.1-1B",
+        default="meta-llama/Meta-Llama-3.1-1B",
+        help="Base model to use (default: Llama 3.1 1B)",
     )
     parser.add_argument(
         "--dataset_path",
@@ -66,31 +65,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="phi-3-mini-first-responder",
+        default="llama-3.1-1b-first-responder",
         help="Directory to save the trained model",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=1,
-        help="Batch size for training",
+        default=2,
+        help="Batch size for training (larger for Llama 3.1 1B)",
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=16,
+        default=8,
         help="Number of steps to accumulate gradients",
     )
     parser.add_argument(
         "--max_seq_length",
         type=int,
-        default=2048,
+        default=1024,
         help="Maximum sequence length",
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=2e-4,
+        default=1e-4,
         help="Learning rate for training",
     )
     parser.add_argument(
@@ -113,13 +112,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--lora_r",
         type=int,
-        default=16,
+        default=8,
         help="Rank of the LoRA update matrices",
     )
     parser.add_argument(
         "--lora_alpha",
         type=int,
-        default=32,
+        default=16,
         help="Scaling factor for LoRA",
     )
     parser.add_argument(
@@ -208,10 +207,10 @@ def main():
         preprocessor = DocumentPreprocessor()
         preprocessor.run()
 
-        # Create dataset
-        dataset_creator = DatasetCreator()
+        # Create dataset specifically for Llama format
+        dataset_creator = DatasetCreator(model_format="llama")
         dataset_creator.run()
-        print("Dataset rebuilt successfully.")
+        print("Dataset rebuilt successfully with Llama formatting.")
 
     # Load the dataset
     logger.info(f"Loading dataset from {args.dataset_path}")
@@ -246,15 +245,9 @@ def main():
         f"Split dataset into {len(split_dataset['train'])} train and {len(split_dataset['test'])} evaluation examples"
     )
 
-    # For Phi-3 models, we need special formatting
-    if "Phi-3" in args.model_name:
-        logger.info("Formatting dataset for Phi-3")
-        # The Phi-3 specific formatting will be handled in the trainer
-
-    # For Llama models, use Llama specific formatting
-    if "Llama" in args.model_name:
-        logger.info("Formatting dataset for Llama")
-        # The Llama specific formatting will be handled in the trainer
+    # For Llama 3.1 models, we use the llama specific formatting
+    logger.info("Formatting dataset for Llama 3.1")
+    # The Llama specific formatting will be handled in the trainer
 
     # Create model trainer
     trainer = ModelTrainer(
