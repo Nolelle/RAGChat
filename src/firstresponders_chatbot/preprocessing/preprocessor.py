@@ -15,7 +15,7 @@ from typing import List
 from haystack import Pipeline
 from haystack.dataclasses import Document
 from haystack.components.converters import TextFileToDocument, PyPDFToDocument
-from haystack.components.preprocessors import DocumentSplitter
+from haystack.components.preprocessors import DocumentSplitter, DocumentCleaner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,41 +48,68 @@ class DocumentPreprocessor:
         os.makedirs(self.output_dir, exist_ok=True)
 
         all_documents = []
+        file_count = 0
 
         # Process each file in the docs directory
         for file_path in self.docs_dir.glob("**/*"):
             if file_path.is_file():
-                logger.info(f"Processing file: {file_path}")
-                try:
-                    # Create new component instances for each file
-                    pdf_converter = PyPDFToDocument()
-                    text_converter = TextFileToDocument()
-                    splitter = DocumentSplitter(
-                        split_by="sentence", split_length=3, split_overlap=1
-                    )
+                # Log which file is being processed
+                file_count += 1
+                logger.info(f"Processing file {file_count}: {file_path.name}")
 
+                try:
                     # Create a pipeline for each file
                     pipeline = Pipeline()
-                    pipeline.add_component("splitter", splitter)
 
+                    # Add appropriate converter based on file type
                     if file_path.suffix.lower() == ".pdf":
-                        pipeline.add_component("converter", pdf_converter)
+                        pipeline.add_component("converter", PyPDFToDocument())
                     elif file_path.suffix.lower() in [".txt", ".md"]:
-                        pipeline.add_component("converter", text_converter)
+                        pipeline.add_component("converter", TextFileToDocument())
                     else:
-                        logger.warning(f"Skipping unsupported file: {file_path}")
                         continue
 
-                    # Connect converter to splitter
-                    pipeline.connect("converter.documents", "splitter.documents")
+                    # Add a document cleaner
+                    pipeline.add_component("cleaner", DocumentCleaner())
 
-                    # Run pipeline
-                    result = pipeline.run({"converter": {"sources": [str(file_path)]}})
-                    split_documents = result["splitter"]["documents"]
-                    logger.info(
-                        f"Split {file_path.name} into {len(split_documents)} chunks"
+                    # Add a single splitter with valid parameters
+                    pipeline.add_component(
+                        "splitter",
+                        DocumentSplitter(
+                            split_by="word", split_length=150, split_overlap=30
+                        ),
                     )
-                    all_documents.extend(split_documents)
+
+                    # Try with specific component connections
+                    pipeline.connect("converter.documents", "cleaner.documents")
+                    pipeline.connect("cleaner.documents", "splitter.documents")
+
+                    # Run pipeline with a single file path
+                    logger.debug(f"Running pipeline for {file_path}")
+                    result = pipeline.run({"converter": {"sources": [str(file_path)]}})
+
+                    # If documents were successfully processed
+                    if "splitter" in result and "documents" in result["splitter"]:
+                        split_documents = result["splitter"]["documents"]
+
+                        # Ensure we have a list of documents
+                        if not isinstance(split_documents, list):
+                            split_documents = [split_documents]
+
+                        # Add metadata to documents
+                        for i, doc in enumerate(split_documents):
+                            if not hasattr(doc, "meta") or doc.meta is None:
+                                doc.meta = {}
+                            doc.meta["file_name"] = file_path.name
+                            doc.meta["file_path"] = str(file_path)
+
+                        # Log the number of chunks created
+                        logger.info(
+                            f"Split {file_path.name} into {len(split_documents)} chunks"
+                        )
+                        all_documents.extend(split_documents)
+                    else:
+                        logger.warning(f"No documents produced for {file_path}")
 
                 except Exception as e:
                     logger.error(f"Error processing {file_path}: {str(e)}")
