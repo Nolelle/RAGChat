@@ -89,13 +89,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=1e-4,
+        default=8e-5,
         help="Learning rate for training",
     )
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=3,
+        default=4,
         help="Number of epochs to train for",
     )
     parser.add_argument(

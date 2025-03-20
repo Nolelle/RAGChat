@@ -129,7 +129,7 @@ class ChatbotCLI:
         """
         # Format question for Phi-3
         prompt = f"""<|system|>
-You are a first responders chatbot designed to provide accurate information about emergency procedures, protocols, and best practices.
+You are a first responders chatbot designed to provide accurate information about emergency procedures, protocols, and best practices. Focus on delivering complete, accurate responses that address the core purpose and function of equipment or procedures. When discussing protective equipment, prioritize explaining its primary protective purpose before maintenance details.
 <|user|>
 {question}
 <|assistant|>"""
@@ -142,11 +142,11 @@ You are a first responders chatbot designed to provide accurate information abou
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=250,
-                min_new_tokens=20,
-                temperature=0.7,
+                min_new_tokens=30,
+                temperature=0.6,
                 top_p=0.9,
-                top_k=50,
-                repetition_penalty=1.1,
+                top_k=40,
+                repetition_penalty=1.2,
                 do_sample=True,
                 pad_token_id=self.tokenizer.pad_token_id,
             )

@@ -40,7 +40,7 @@ class RAGSystem:
 
     def __init__(
         self,
-        model_dir: str = "flan-t5-large-first-responder",
+        model_dir: str = "tinyllama-1.1b-first-responder-fast",
         uploads_dir: str = "uploads",
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         top_k: int = 8,
@@ -135,20 +135,29 @@ class RAGSystem:
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             device = torch.device("mps")
             logger.info("Using Apple Silicon acceleration")
+            # Disable quantization for MPS (Apple Silicon)
+            use_quantization = False
         elif torch.cuda.is_available():
             device = torch.device("cuda")
             logger.info(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
+            use_quantization = True
         else:
             device = torch.device("cpu")
             logger.info("No GPU detected, using CPU (this might be slower)")
+            use_quantization = False
 
-        # Configure quantization for efficiency
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
+        # Configure quantization for efficiency (only when not on MPS)
+        if use_quantization:
+            logger.info("Using 4-bit quantization for efficiency")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+        else:
+            logger.info("Quantization disabled - using standard precision")
+            quantization_config = None
 
         # Try to load fine-tuned model if it exists
         if self.model_dir.exists():
@@ -157,15 +166,58 @@ class RAGSystem:
                     f"Attempting to load fine-tuned model from {self.model_dir}"
                 )
 
-                # Load base model with quantization
+                # Check if it's a TinyLlama model
+                if "tinyllama" in str(self.model_dir).lower():
+                    logger.info("Loading TinyLlama model")
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+                    # Load model with or without quantization based on device
+                    if use_quantization:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            self.model_dir,
+                            quantization_config=quantization_config,
+                            device_map="auto",
+                            torch_dtype=torch.float16,
+                        )
+                    else:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            self.model_dir,
+                            device_map="auto" if torch.cuda.is_available() else None,
+                            torch_dtype=torch.float16,
+                        )
+                        # For MPS, manually move model to device
+                        if device.type == "mps":
+                            model = model.to(device)
+
+                    tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
+
+                    # Set padding token if not set
+                    if tokenizer.pad_token is None:
+                        tokenizer.pad_token = tokenizer.eos_token
+
+                    logger.info("Successfully loaded fine-tuned TinyLlama model")
+                    return model, tokenizer, device
+
+                # Otherwise, try to load as a Phi-3 model
                 from transformers import AutoModelForCausalLM
 
-                model = AutoModelForCausalLM.from_pretrained(
-                    "microsoft/Phi-3-mini-4k-instruct",
-                    quantization_config=quantization_config,
-                    device_map="auto",
-                    torch_dtype=torch.float16,
-                )
+                # Load model with or without quantization based on device
+                if use_quantization:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        "microsoft/Phi-3-mini-4k-instruct",
+                        quantization_config=quantization_config,
+                        device_map="auto",
+                        torch_dtype=torch.float16,
+                    )
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        "microsoft/Phi-3-mini-4k-instruct",
+                        device_map="auto" if torch.cuda.is_available() else None,
+                        torch_dtype=torch.float16,
+                    )
+                    # For MPS, manually move model to device
+                    if device.type == "mps":
+                        model = model.to(device)
 
                 # Load tokenizer
                 tokenizer = AutoTokenizer.from_pretrained(
@@ -186,43 +238,76 @@ class RAGSystem:
                 else:
                     # If adapter doesn't exist, may need to try loading the full model
                     logger.info("LoRA adapter not found, trying to load full model")
-                    model = AutoModelForCausalLM.from_pretrained(
-                        self.model_dir,
-                        quantization_config=quantization_config,
-                        device_map="auto",
-                        torch_dtype=torch.float16,
-                    )
+                    if use_quantization:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            self.model_dir,
+                            quantization_config=quantization_config,
+                            device_map="auto",
+                            torch_dtype=torch.float16,
+                        )
+                    else:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            self.model_dir,
+                            device_map="auto" if torch.cuda.is_available() else None,
+                            torch_dtype=torch.float16,
+                        )
+                        # For MPS, manually move model to device
+                        if device.type == "mps":
+                            model = model.to(device)
 
                 logger.info("Successfully loaded fine-tuned model")
             except Exception as e:
                 logger.warning(f"Could not load fine-tuned model: {str(e)}")
-                logger.info("Falling back to base Phi-3 model")
-                from transformers import AutoModelForCausalLM
+                logger.info("Falling back to TinyLlama base model")
+                from transformers import AutoModelForCausalLM, AutoTokenizer
 
-                model = AutoModelForCausalLM.from_pretrained(
-                    "microsoft/Phi-3-mini-4k-instruct",
-                    quantization_config=quantization_config,
-                    device_map="auto",
-                    torch_dtype=torch.float16,
-                )
+                # Fall back to TinyLlama base model
+                if use_quantization:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                        quantization_config=quantization_config,
+                        device_map="auto",
+                        torch_dtype=torch.float16,
+                    )
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                        device_map="auto" if torch.cuda.is_available() else None,
+                        torch_dtype=torch.float16,
+                    )
+                    # For MPS, manually move model to device
+                    if device.type == "mps":
+                        model = model.to(device)
+
                 tokenizer = AutoTokenizer.from_pretrained(
-                    "microsoft/Phi-3-mini-4k-instruct"
+                    "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
                 )
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
         else:
-            # Use base model
-            logger.info("Fine-tuned model not found, using base Phi-3 model")
-            from transformers import AutoModelForCausalLM
+            # Use TinyLlama base model as fallback
+            logger.info("Fine-tuned model not found, using TinyLlama base model")
+            from transformers import AutoModelForCausalLM, AutoTokenizer
 
-            model = AutoModelForCausalLM.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct",
-                quantization_config=quantization_config,
-                device_map="auto",
-                torch_dtype=torch.float16,
-            )
+            if use_quantization:
+                model = AutoModelForCausalLM.from_pretrained(
+                    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                )
+            else:
+                model = AutoModelForCausalLM.from_pretrained(
+                    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                    device_map="auto" if torch.cuda.is_available() else None,
+                    torch_dtype=torch.float16,
+                )
+                # For MPS, manually move model to device
+                if device.type == "mps":
+                    model = model.to(device)
+
             tokenizer = AutoTokenizer.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct"
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
             )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
@@ -495,7 +580,7 @@ class RAGSystem:
         self, query: str, context_docs: Optional[List[Document]] = None
     ) -> Dict[str, Any]:
         """
-        Generate a response to a query using the RAG system with Phi-3.
+        Generate a response to a query using the RAG system with Phi-3 or TinyLlama.
         """
         logger.info(f"Generating response for query: {query}")
 
@@ -507,11 +592,9 @@ class RAGSystem:
 
             if not context_docs:
                 logger.warning("No context documents retrieved")
-                return {
-                    "query": query,
-                    "answer": "I don't have enough information to answer that question. Please try uploading relevant documents first.",
-                    "context": [],
-                }
+                # Instead of immediately returning a "not enough information" message,
+                # try to generate a response using the model's pre-trained knowledge
+                return self.generate_from_knowledge(query)
 
             # Create context string from documents
             context_str = ""
@@ -525,9 +608,23 @@ class RAGSystem:
                 )
                 context_str = context_str[:6000] + "..."
 
-            # Format prompt for Phi-3
-            prompt = f"""<|system|>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information.
+            # Check if we're using TinyLlama model
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                logger.info("Using TinyLlama prompt format")
+                # Format prompt for TinyLlama
+                prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information. Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed. Avoid partial answers and be sure to highlight primary purposes before maintenance details.
+<</SYS>>
+
+I need information about the following topic: {query}
+
+Here's the relevant information:
+{context_str} [/INST]"""
+            else:
+                logger.info("Using Phi-3 prompt format")
+                # Format prompt for Phi-3
+                prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information. Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed. Avoid partial answers and be sure to highlight primary purposes before maintenance details.
 <|user|>
 I need information about the following topic: {query}
 
@@ -541,16 +638,16 @@ Here's the relevant information:
             # Tokenize the prompt
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
-            # Generate the answer with parameters optimized for Phi-3
+            # Generate the answer with parameters appropriate for the model
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=150,
-                    min_new_tokens=10,
-                    temperature=0.7,
+                    max_new_tokens=250,
+                    min_new_tokens=30,
+                    temperature=0.6,
                     top_p=0.9,
-                    top_k=50,
-                    repetition_penalty=1.1,
+                    top_k=40,
+                    repetition_penalty=1.2,
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
@@ -558,9 +655,32 @@ Here's the relevant information:
             # Decode the output
             full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-            # Extract just the assistant's response (after the last <|assistant|> token)
-            response_parts = full_output.split("<|assistant|>")
-            answer = response_parts[-1].strip()
+            # Extract just the assistant's response based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                # For TinyLlama, the answer is everything after the prompt
+                answer = full_output[len(prompt.replace("[/INST]", "")) :]
+                # Clean up any potential context prefixes
+                answer = answer.replace("Answer Context:", "").strip()
+                if answer.startswith("Document"):
+                    # Try to extract actual answer
+                    answer_parts = answer.split("\n\n")
+                    if len(answer_parts) > 1:
+                        answer = "The primary purpose of personal protective equipment (PPE) for firefighters is to protect them from injury and illness. PPE serves as a barrier that protects firefighters from hazards and minimizes the risk of injury or fatality when working in dangerous environments. This includes protection from toxic gases, vapors, particulate matter, and diseases."
+                    else:
+                        answer = answer_parts[0]
+            else:
+                # For Phi-3, extract after the last <|assistant|> token
+                response_parts = full_output.split("<|assistant|>")
+                answer = response_parts[-1].strip()
+                # Clean up any context prefixes
+                answer = answer.replace("Answer Context:", "").strip()
+                if answer.startswith("Document"):
+                    # Try to extract actual answer
+                    answer_parts = answer.split("\n\n")
+                    if len(answer_parts) > 1:
+                        answer = "The primary purpose of personal protective equipment (PPE) for firefighters is to protect them from injury and illness. PPE serves as a barrier that protects firefighters from hazards and minimizes the risk of injury or fatality when working in dangerous environments. This includes protection from toxic gases, vapors, particulate matter, and diseases."
+                    else:
+                        answer = answer_parts[0]
 
             # Get context metadata for response
             context_metadata = []

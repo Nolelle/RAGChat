@@ -234,17 +234,22 @@ class DatasetCreator:
                 "What information can you provide about {}?",
                 "What are the key points about {}?",
                 "What does the manual say about {}?",
+                "What is the primary purpose of {}?",
+                "What is the core function of {} in emergency response?",
             ],
             "procedural": [
                 "What procedures are involved with {}?",
                 "How should first responders handle situations involving {}?",
                 "What are the steps for {}?",
                 "What is the proper protocol for {}?",
+                "How do you ensure {} is properly maintained while keeping it ready for its primary protective purpose?",
             ],
             "explanatory": [
                 "Can you explain the concept of {} in simple terms?",
                 "How would you describe {} to a new first responder?",
                 "Explain {} as if I'm a trainee first responder.",
+                "What specific hazards does {} protect against?",
+                "How does {} minimize risk of injury or fatality?",
             ],
             "application": [
                 "How is {} applied in emergency situations?",
@@ -620,6 +625,61 @@ Answer:"""
         logger.info("Formatted data for Phi-3 fine-tuning")
         return formatted_data
 
+    def _enhance_answer_content(self, question, answer):
+        """
+        Enhance answer content to ensure completeness and emphasize primary purposes.
+
+        Args:
+            question: The question string
+            answer: The answer string
+
+        Returns:
+            Enhanced answer string
+        """
+        # Make sure all answers are complete sentences
+        if not answer.strip().endswith((".", "!", "?")):
+            answer = answer.strip() + "."
+
+        # If answer is too short, try to enhance it based on topic
+        if len(answer.split()) < 15:
+            # For protective equipment questions
+            if (
+                "ppe" in question.lower()
+                or "protective" in question.lower()
+                or "equipment" in question.lower()
+            ):
+                if "protect" not in answer.lower() and "hazard" not in answer.lower():
+                    answer += " Its primary purpose is to protect first responders from various hazards and minimize the risk of injury or fatality."
+
+            # For procedure-related questions
+            if (
+                "procedure" in question.lower()
+                or "protocol" in question.lower()
+                or "step" in question.lower()
+            ):
+                if "safety" not in answer.lower() and "ensure" not in answer.lower():
+                    answer += " Following proper procedures ensures safety and effective emergency response."
+
+            # For emergency response questions
+            if (
+                "emergency" in question.lower()
+                or "response" in question.lower()
+                or "incident" in question.lower()
+            ):
+                if "critical" not in answer.lower() and "time" not in answer.lower():
+                    answer += " Time-critical decisions during emergency response require proper training and adherence to protocols."
+
+            # For medical-related questions
+            if (
+                "medical" in question.lower()
+                or "treatment" in question.lower()
+                or "patient" in question.lower()
+            ):
+                if "care" not in answer.lower() and "assessment" not in answer.lower():
+                    answer += " Proper patient assessment and care are fundamental to medical emergency response."
+
+        return answer
+
     def format_for_llama(
         self,
         train_data: List[Dict[str, str]],
@@ -637,14 +697,17 @@ Answer:"""
         Returns:
             Dictionary with formatted data
         """
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials. Always provide comprehensive, standalone answers that cover all relevant aspects of a topic. Emphasize primary purposes and functions first before discussing secondary details like maintenance. When discussing equipment or procedures, explain what specific hazards they address and how they help minimize risks. Use clear, authoritative language appropriate for first responder training."
 
         # Format data for Llama 3.1 with chat template
         def format_item(item):
+            enhanced_answer = self._enhance_answer_content(
+                item["question"], item["answer"]
+            )
             return {
                 "input": f"{item['question']}",
-                "output": f"{item['answer']}",
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {item['answer']}</s>",
+                "output": f"{enhanced_answer}",
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {enhanced_answer}</s>",
             }
 
         formatted_data = {
