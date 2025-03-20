@@ -792,5 +792,86 @@ Here's the relevant information:
     def clear_index(self) -> None:
         """Clear the document index."""
         self.document_store.delete_documents()
-        self.indexed_files.clear()
         logger.info("Document index cleared")
+
+    def generate_from_knowledge(self, query: str) -> Dict[str, Any]:
+        """
+        Generate a response using only the model's pre-trained knowledge when no context is available.
+        """
+        logger.info(f"Generating response from model knowledge for query: {query}")
+
+        try:
+            # Check if we're using TinyLlama model
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                # Format prompt for TinyLlama
+                prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate information based on your training. 
+If you don't have enough information to answer accurately, acknowledge the limitations and provide 
+general guidance where possible.
+<</SYS>>
+
+{query} [/INST]"""
+            else:
+                # Format prompt for Phi-3
+                prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate information based on your training. 
+If you don't have enough information to answer accurately, acknowledge the limitations and provide 
+general guidance where possible.
+<|user|>
+{query}
+<|assistant|>"""
+
+            # Log the prompt
+            logger.info(f"KNOWLEDGE PROMPT:\n{prompt}")
+
+            # Tokenize the prompt
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+            # Generate the answer
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=250,
+                    min_new_tokens=30,
+                    temperature=0.7,  # Slightly higher temperature for more diverse responses
+                    top_p=0.9,
+                    top_k=40,
+                    repetition_penalty=1.2,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+
+            # Decode the output
+            full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            # Extract just the assistant's response based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                answer = full_output[len(prompt.replace("[/INST]", "")) :].strip()
+            else:
+                response_parts = full_output.split("<|assistant|>")
+                answer = response_parts[-1].strip()
+
+            # Create a context message that matches the format expected by the frontend
+            context_message = [
+                {
+                    "file_name": "Model Knowledge",
+                    "file_path": "None",
+                    "snippet": "The response was generated using the model's knowledge as no relevant documents were found.",
+                }
+            ]
+
+            return {
+                "query": query,
+                "answer": answer,
+                "context": context_message,
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating response from knowledge: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            return {
+                "query": query,
+                "answer": "I apologize, but I don't have enough information to provide a specific answer to your question. Please try indexing relevant documents first.",
+                "context": [],
+            }
