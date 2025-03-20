@@ -13,6 +13,9 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
         const uploadedFile = event.target.files[0];
         if (!uploadedFile) return;
         
+        // Reset previous upload status when starting a new upload
+        setUploadStatus(null);
+        
         // Check file type
         const allowedTypes = ['application/pdf', 'text/plain', 'text/markdown'];
         if (!allowedTypes.includes(uploadedFile.type)) {
@@ -62,6 +65,11 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
                     text: `File "${uploadedFile.name}" uploaded successfully.`,
                     isUser: false
                 });
+                
+                // Reset uploadStatus back to null after a short delay
+                setTimeout(() => {
+                    setUploadStatus(null);
+                }, 2000);
             } else {
                 throw new Error(data.message || 'Failed to upload file');
             }
