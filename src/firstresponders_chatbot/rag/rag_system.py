@@ -611,9 +611,34 @@ class RAGSystem:
             # Check if we're using TinyLlama model
             if "TinyLlama" in self.tokenizer.name_or_path:
                 logger.info("Using TinyLlama prompt format")
-                # Format prompt for TinyLlama
+                # Format prompt for TinyLlama with instructions to summarize
                 prompt = f"""<s>[INST] <<SYS>>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information. Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed. Avoid partial answers and be sure to highlight primary purposes before maintenance details.
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
+Answer questions using the provided context information, but DO NOT copy the information verbatim. 
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
 <</SYS>>
 
 I need information about the following topic: {query}
@@ -622,9 +647,34 @@ Here's the relevant information:
 {context_str} [/INST]"""
             else:
                 logger.info("Using Phi-3 prompt format")
-                # Format prompt for Phi-3
+                # Format prompt for Phi-3 with instructions to summarize
                 prompt = f"""<|system|>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. Answer questions using only the provided context information. Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed. Avoid partial answers and be sure to highlight primary purposes before maintenance details.
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
+Answer questions using the provided context information, but DO NOT copy the information verbatim.
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
 <|user|>
 I need information about the following topic: {query}
 
@@ -642,9 +692,9 @@ Here's the relevant information:
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=250,
-                    min_new_tokens=30,
-                    temperature=0.6,
+                    max_new_tokens=350,  # Increased to allow for more comprehensive summaries
+                    min_new_tokens=75,  # Increased to ensure substantive responses
+                    temperature=0.7,  # Slightly increased to encourage more creative summarization
                     top_p=0.9,
                     top_k=40,
                     repetition_penalty=1.2,
@@ -808,6 +858,29 @@ Here's the relevant information:
 You are a first responder assistant designed to provide accurate information based on your training. 
 If you don't have enough information to answer accurately, acknowledge the limitations and provide 
 general guidance where possible.
+Answer in your own words with clear explanations rather than technical jargon whenever possible.
+Organize your response with clear structure and use concise language.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
 <</SYS>>
 
 {query} [/INST]"""
@@ -817,6 +890,29 @@ general guidance where possible.
 You are a first responder assistant designed to provide accurate information based on your training. 
 If you don't have enough information to answer accurately, acknowledge the limitations and provide 
 general guidance where possible.
+Answer in your own words with clear explanations rather than technical jargon whenever possible.
+Organize your response with clear structure and use concise language.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
 <|user|>
 {query}
 <|assistant|>"""

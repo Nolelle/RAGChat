@@ -10,8 +10,13 @@ The FirstRespondersChatbot is designed to assist first responders by providing q
    - Flan-T5 model fine-tuned on first responder documentation
    - Phi-3 Mini model for improved quality and efficiency
    - **New**: Llama 3.1 1B model for state-of-the-art performance
+   - TinyLlama 1.1B model optimized for fast inference ("tinyllama-1.1b-first-responder-fast")
 2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
 3. **Hybrid Retrieval**: Combines semantic search with keyword-based retrieval for better results
+
+## Current Model Configuration
+
+The system is currently configured to use the "tinyllama-1.1b-first-responder-fast" model by default. This model provides a good balance of response quality and speed, particularly on devices with limited resources.
 
 ## New: Support for Llama 3.1 1B
 
@@ -154,6 +159,8 @@ To start the REST API server:
 python server.py --host 0.0.0.0 --port 8000
 ```
 
+This will start the server using the default model directory ("tinyllama-1.1b-first-responder-fast"). To use a different model, modify the model_dir parameter in the RAGSystem initialization in server.py.
+
 ## API Documentation
 
 The REST API provides the following endpoints:
@@ -163,8 +170,6 @@ The REST API provides the following endpoints:
 - `POST /api/query`: Query the RAG system
 - `POST /api/clear`: Clear the document index
 - `GET /api/files`: Get a list of indexed files
-
-## Project Structure
 
 ## Training with Llama 3.1 1B
 
@@ -215,5 +220,6 @@ Llama 3.1 1B offers significant improvements over previous models:
 | Flan-T5 Base | 250M | 1.5 hours | Fast | Good |
 | Phi-3 Mini | 3.8B | 4 hours | Medium | Very Good |
 | Llama 3.1 1B | 1B | 2.5 hours | Fast | Excellent |
+| TinyLlama 1.1B | 1.1B | 2 hours | Very Fast | Good |
 
-The Llama 3.1 1B model provides the best balance of size, training speed, and quality for first responder applications running on Apple Silicon.
+The Llama 3.1 1B model provides the best balance of size, training speed, and quality for first responder applications running on Apple Silicon, while TinyLlama offers exceptional speed for scenarios where response time is critical.

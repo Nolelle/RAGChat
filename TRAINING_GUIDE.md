@@ -12,6 +12,7 @@ This guide provides detailed instructions on how to train, evaluate, and optimiz
 - [Evaluation Metrics](#evaluation-metrics)
 - [Troubleshooting](#troubleshooting)
 - [Advanced Configurations](#advanced-configurations)
+- [TinyLlama Training](#tinyllama-training)
 
 ## Prerequisites
 
@@ -20,7 +21,7 @@ Before training the model, ensure you have:
 - Python 3.9+ installed
 - Required packages installed (run `pip install -e .` from the project root)
 - NLTK resources downloaded (will be downloaded automatically on first run)
-- Sufficient disk space for model checkpoints (~2-4GB for flan-t5-large)
+- Sufficient disk space for model checkpoints (~2-4GB for flan-t5-large, ~1-2GB for TinyLlama)
 - Appropriate hardware (see [Hardware-Specific Optimizations](#hardware-specific-optimizations))
 
 ## Dataset Preparation
@@ -53,6 +54,21 @@ This process:
 - Creates a balanced dataset for training
 - Outputs the dataset to `./data/pseudo_data.json`
 
+### Model-Specific Dataset Formatting
+
+For different model architectures, you can specify the appropriate format:
+
+```bash
+# For Llama models
+python create_dataset.py --model_format llama
+
+# For Phi-3 models
+python create_dataset.py --model_format phi-3
+
+# For Flan-T5 models (default)
+python create_dataset.py --model_format flan-t5
+```
+
 ### Rebuilding the Dataset with Improved Techniques
 
 To rebuild the dataset with enhanced processing:
@@ -77,19 +93,19 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 
 ### Key Parameters
 
-- `--model_name`: The base model to fine-tune (options: flan-t5-small, flan-t5-base, flan-t5-large, flan-t5-xl, flan-t5-xxl)
+- `--model_name`: The base model to fine-tune (options include: flan-t5-*, phi-3-*, llama-*)
 - `--output_dir`: Directory to save the trained model
 - `--batch_size`: Batch size for training (default: 1, increase for more GPU memory)
 - `--gradient_accumulation_steps`: Number of steps to accumulate gradients (default: 32)
 - `--learning_rate`: Learning rate (default: 3e-5)
 - `--num_train_epochs`: Number of training epochs (default: 8)
-- `--max_source_length`: Maximum input length (default: 384, recommend: 256 for faster training)
-- `--max_target_length`: Maximum output length (default: 96, recommend: 64 for faster training)
+- `--max_source_length`/`--max_seq_length`: Maximum input length (adjust based on model)
+- `--max_target_length`: Maximum output length (for Flan-T5)
 - `--train_test_split`: Fraction of data to use for evaluation (default: 0.1)
 
 ## Hardware-Specific Optimizations
 
-### Apple Silicon (M1/M2/M3)
+### Apple Silicon (M1/M2/M3/M4)
 
 For Apple Silicon, use these settings for optimal performance:
 
@@ -100,7 +116,13 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 - The system automatically detects Apple Silicon and enables MPS acceleration
 - Avoid `--fp16` as it's not fully compatible with MPS
 - Reduce sequence lengths to improve memory usage
-- Consider using a smaller model (flan-t5-base) for faster training
+- Consider using a smaller model (flan-t5-base, TinyLlama, or Llama 3.1 1B) for faster training
+
+For TinyLlama on Apple Silicon:
+
+```bash
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --gradient_accumulation_steps 8
+```
 
 ### NVIDIA GPUs
 
@@ -122,13 +144,13 @@ For CPU-only training:
 python train.py --model_name google/flan-t5-small --output_dir flan-t5-small-first-responder --freeze_encoder --num_train_epochs 3
 ```
 
-- Use smaller models (flan-t5-small or flan-t5-base)
+- Use smaller models (flan-t5-small or TinyLlama)
 - Reduce sequence lengths and epochs for faster completion
 - Consider freezing the encoder to speed up training
 
 ## Two-Stage Training Process
 
-For optimal results, we recommend a two-stage training approach:
+For optimal results with Flan-T5 models, we recommend a two-stage training approach:
 
 ### Stage 1: Freeze Encoder
 
@@ -152,6 +174,22 @@ This stage:
 - Allows the encoder to adapt to the specific language of first responder documents
 - Creates a more powerful and accurate model
 
+## TinyLlama Training
+
+TinyLlama is an efficient 1.1B parameter model that provides fast inference while maintaining good quality responses. The model currently in production is "tinyllama-1.1b-first-responder-fast", which was optimized for fast inference on resource-constrained devices.
+
+To train a TinyLlama model:
+
+```bash
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --lora_r 8 --lora_alpha 16 --lora_dropout 0.05 --num_train_epochs 3 --learning_rate 3e-4 --gradient_accumulation_steps 8
+```
+
+This configuration:
+- Uses the smaller sequence length to reduce memory usage
+- Applies LoRA (Low-Rank Adaptation) for more efficient fine-tuning
+- Uses a slightly higher learning rate to accelerate training
+- Reduces the number of epochs to minimize training time
+
 ## Evaluation Metrics
 
 The training process automatically evaluates the model using:
@@ -165,7 +203,7 @@ To view evaluation metrics:
 2. Examine the `trainer_state.json` file in the output directory
 3. Use TensorBoard for visualization:
    ```bash
-   tensorboard --logdir flan-t5-large-first-responder/runs
+   tensorboard --logdir ./your-model-dir/runs
    ```
 
 ## Troubleshooting
@@ -193,6 +231,7 @@ To view evaluation metrics:
   - Use `--freeze_encoder` flag
   - Reduce sequence lengths
   - Reduce gradient accumulation steps
+  - Consider using TinyLlama instead of larger models
 
 ## Advanced Configurations
 
@@ -222,22 +261,16 @@ python create_dataset.py --input-file ./data/preprocessed_data.json --output-fil
 
 ### Using the Trained Model in RAG Pipeline
 
-After training, integrate your model with the Haystack RAG pipeline:
+After training, integrate your model with the Haystack RAG pipeline by configuring the model directory in the RAGSystem initialization:
 
 ```python
-from haystack import Pipeline
-from haystack.components.generators import HuggingFaceLocalGenerator
-from haystack.components.retrievers import InMemoryBM25Retriever
+# In your server.py or other integration point
+from src.firstresponders_chatbot.rag.rag_system import RAGSystem
 
-generator = HuggingFaceLocalGenerator(
-    model="./flan-t5-large-first-responder-final",
-    task="text2text-generation"
-)
-
-# Set up retriever and pipeline as usual
-# ...
+# Initialize with your chosen model
+rag_system = RAGSystem(model_dir="tinyllama-1.1b-first-responder-fast")
 ```
 
 ## Conclusion
 
-This training guide provides comprehensive instructions for training the FirstRespondersChatbot model with optimal configurations for different hardware and use cases. By following these guidelines, you can create a high-quality model that provides accurate and helpful responses to first responder queries. 
+This training guide provides comprehensive instructions for training the FirstRespondersChatbot model with optimal configurations for different hardware and use cases. By following these guidelines, you can create a high-quality model that provides accurate and helpful responses to first responder queries.

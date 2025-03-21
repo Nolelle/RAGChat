@@ -6,6 +6,17 @@ This guide explains how to integrate your trained FirstRespondersChatbot model w
 
 Haystack 2.0 provides a flexible framework for building production-ready RAG systems. The FirstRespondersChatbot is designed to work seamlessly with Haystack's components for document retrieval and generation.
 
+## Model Selection
+
+The FirstRespondersChatbot project supports multiple models:
+
+- **TinyLlama 1.1B** (default, "tinyllama-1.1b-first-responder-fast"): Optimized for fast inference
+- **Llama 3.1 1B**: Excellent quality with moderate speed
+- **Phi-3 Mini**: High quality, slightly slower
+- **Flan-T5**: Original model architecture, multiple sizes available
+
+Choose the model that best fits your performance and quality requirements.
+
 ## Basic RAG Pipeline
 
 Here's a basic example of setting up a RAG pipeline with your trained model:
@@ -30,8 +41,8 @@ document_store.write_documents([
 
 # 3. Set up the generator using your fine-tuned model
 generator = HuggingFaceLocalGenerator(
-    model="./flan-t5-large-first-responder",  # Path to your trained model
-    task="text2text-generation",
+    model="./tinyllama-1.1b-first-responder-fast",  # Path to your trained model
+    task="text-generation",  # Use "text2text-generation" for Flan-T5 models
     generation_kwargs={
         "max_new_tokens": 100,
         "temperature": 0.7,
@@ -126,16 +137,91 @@ response = pipe.run({
 })
 ```
 
-## Hardware Optimization
+## Model-Specific Configurations
 
-### Apple Silicon Support
+### TinyLlama Configuration
 
-When running on Apple Silicon (M1/M2/M3):
+For TinyLlama models:
+
+```python
+generator = HuggingFaceLocalGenerator(
+    model="./tinyllama-1.1b-first-responder-fast",
+    task="text-generation",
+    generation_kwargs={
+        "max_new_tokens": 250,
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "top_k": 40,
+        "repetition_penalty": 1.2,
+        "do_sample": True,
+    }
+)
+```
+
+### Llama 3.1 Configuration
+
+For Llama 3.1 models:
+
+```python
+generator = HuggingFaceLocalGenerator(
+    model="./llama-3.1-1b-first-responder",
+    task="text-generation",
+    generation_kwargs={
+        "max_new_tokens": 350,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 40,
+        "repetition_penalty": 1.2,
+        "do_sample": True,
+    }
+)
+```
+
+### Phi-3 Configuration
+
+For Phi-3 models:
+
+```python
+generator = HuggingFaceLocalGenerator(
+    model="./phi-3-mini-first-responder",
+    task="text-generation",
+    generation_kwargs={
+        "max_new_tokens": 350,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 40,
+        "repetition_penalty": 1.2,
+        "do_sample": True,
+    }
+)
+```
+
+### Flan-T5 Configuration
+
+For Flan-T5 models:
 
 ```python
 generator = HuggingFaceLocalGenerator(
     model="./flan-t5-large-first-responder",
     task="text2text-generation",
+    generation_kwargs={
+        "max_new_tokens": 150,
+        "temperature": 0.7,
+        "do_sample": True,
+    }
+)
+```
+
+## Hardware Optimization
+
+### Apple Silicon Support
+
+When running on Apple Silicon (M1/M2/M3/M4):
+
+```python
+generator = HuggingFaceLocalGenerator(
+    model="./tinyllama-1.1b-first-responder-fast",  # TinyLlama works well on Apple Silicon
+    task="text-generation",
     device="mps"  # Enable Metal Performance Shaders
 )
 ```
@@ -146,26 +232,32 @@ For NVIDIA GPUs, enable CUDA acceleration:
 
 ```python
 generator = HuggingFaceLocalGenerator(
-    model="./flan-t5-large-first-responder",
-    task="text2text-generation",
+    model="./llama-3.1-1b-first-responder",  # Larger models work well with CUDA
+    task="text-generation",
     device="cuda:0"
 )
 ```
 
 ## Advanced Configuration
 
-### Using 8-bit Quantization
+### Using 4-bit Quantization
 
 For improved memory efficiency:
 
 ```python
 from transformers import BitsAndBytesConfig
+import torch
 
-quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+)
 
 generator = HuggingFaceLocalGenerator(
-    model="./flan-t5-large-first-responder",
-    task="text2text-generation",
+    model="./phi-3-mini-first-responder",
+    task="text-generation",
     model_kwargs={"quantization_config": quantization_config}
 )
 ```
@@ -281,6 +373,105 @@ async def ask_question(query: Query):
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
+## Optimizations for Production
+
+When deploying your FirstRespondersChatbot RAG system to production, consider these optimizations:
+
+### 1. Document Store Selection
+
+For larger document collections, consider using more scalable document stores:
+
+```python
+from haystack.document_stores.weaviate import WeaviateDocumentStore
+
+document_store = WeaviateDocumentStore(
+    url="http://localhost:8080",
+    embedding_dim=384,  # Match your embedding model's dimension
+    index="FirstResponders"
+)
+```
+
+### 2. Batch Processing for Document Indexing
+
+For large document collections, process in batches:
+
+```python
+# Process documents in batches of 100
+batch_size = 100
+for i in range(0, len(documents), batch_size):
+    batch = documents[i:i+batch_size]
+    embedded_batch = embedder.run(documents=batch)["documents"]
+    document_store.write_documents(embedded_batch)
+    print(f"Processed batch {i//batch_size + 1}/{(len(documents)-1)//batch_size + 1}")
+```
+
+### 3. Caching for Frequent Queries
+
+Implement caching for frequent queries to reduce computation:
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=1000)
+def get_cached_response(query_string):
+    # Convert to immutable type for caching
+    response = pipe.run({
+        "retriever": {"query": query_string},
+        "prompt_builder": {"query": query_string}
+    })
+    return response["llm"]["replies"][0]
+```
+
+### 4. Model Quantization and Serving
+
+For TinyLlama models, leverage 4-bit quantization in production:
+
+```python
+from transformers import BitsAndBytesConfig
+import torch
+
+# 4-bit quantization with double quantization for even more memory savings
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+)
+
+generator = HuggingFaceLocalGenerator(
+    model="./tinyllama-1.1b-first-responder-fast",
+    task="text-generation",
+    model_kwargs={
+        "quantization_config": quantization_config,
+        "device_map": "auto"  # Automatically determine best device placement
+    }
+)
+```
+
+### 5. TinyLlama-Specific Template
+
+Optimize your prompt template specifically for TinyLlama:
+
+```python
+tinyllama_template = """<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
+Answer questions using the provided context information.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+<</SYS>>
+
+Answer the following question based on the context provided:
+
+Context: 
+{% for document in documents %}
+{{ document.content }}
+{% endfor %}
+
+Question: {{ query }} [/INST]
+"""
+```
+
 ## Conclusion
 
-By following this guide, you can effectively integrate your trained FirstRespondersChatbot model with Haystack 2.0 to create powerful and efficient RAG pipelines. This approach combines the strengths of both retrieval and generation to provide accurate and contextual responses for first responder queries. 
+By following this guide, you can effectively integrate your trained FirstRespondersChatbot model with Haystack 2.0 to create powerful and efficient RAG pipelines. This approach combines the strengths of both retrieval and generation to provide accurate and contextual responses for first responder queries.
+
+The TinyLlama model configuration ("tinyllama-1.1b-first-responder-fast") provides an excellent balance of speed and response quality, making it ideal for deployment in time-sensitive first responder environments. For scenarios where response quality is paramount, you can easily switch to the Llama 3.1 1B or Phi-3 Mini models by adjusting the configuration.
