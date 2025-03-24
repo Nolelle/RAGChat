@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import ReactMarkdown from 'react-markdown';
 
 const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
     const [expandedSources, setExpandedSources] = useState({});
@@ -39,8 +40,14 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                     : 'bg-gray-700 text-gray-100 border border-gray-600'
                             }`}
                         >
-                            <div className="text-current">
-                                {msg.text}
+                            <div className="text-current prose prose-invert prose-sm max-w-none">
+                                {msg.isUser ? (
+                                    msg.text
+                                ) : (
+                                    <ReactMarkdown>
+                                        {msg.text}
+                                    </ReactMarkdown>
+                                )}
                             </div>
                             {msg.context && msg.context.length > 0 && (
                                 <div className="mt-3 pt-2 border-t border-gray-600 text-xs text-gray-300">
