@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
     const [expandedSources, setExpandedSources] = useState({});
@@ -44,7 +46,74 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                 {msg.isUser ? (
                                     msg.text
                                 ) : (
-                                    <ReactMarkdown>
+                                    <ReactMarkdown
+                                        components={{
+                                            // Enhanced markdown rendering with code blocks
+                                            code({node, inline, className, children, ...props}) {
+                                                const match = /language-(\w+)/.exec(className || '');
+                                                return !inline && match ? (
+                                                    <SyntaxHighlighter
+                                                        style={vscDarkPlus}
+                                                        language={match[1]}
+                                                        PreTag="div"
+                                                        {...props}
+                                                    >
+                                                        {String(children).replace(/\n$/, '')}
+                                                    </SyntaxHighlighter>
+                                                ) : (
+                                                    <code className={className} {...props}>
+                                                        {children}
+                                                    </code>
+                                                );
+                                            },
+                                            // Enhance tables with better styling
+                                            table({node, children, ...props}) {
+                                                return (
+                                                    <div className="overflow-x-auto my-4">
+                                                        <table className="border-collapse border border-gray-600 w-full" {...props}>
+                                                            {children}
+                                                        </table>
+                                                    </div>
+                                                );
+                                            },
+                                            thead({node, children, ...props}) {
+                                                return (
+                                                    <thead className="bg-gray-800" {...props}>
+                                                        {children}
+                                                    </thead>
+                                                );
+                                            },
+                                            th({node, children, ...props}) {
+                                                return (
+                                                    <th className="border border-gray-600 px-4 py-2 text-left font-bold" {...props}>
+                                                        {children}
+                                                    </th>
+                                                );
+                                            },
+                                            td({node, children, ...props}) {
+                                                return (
+                                                    <td className="border border-gray-600 px-4 py-2" {...props}>
+                                                        {children}
+                                                    </td>
+                                                );
+                                            },
+                                            // Better headings
+                                            h1({node, children, ...props}) {
+                                                return (
+                                                    <h1 className="text-xl font-bold mt-6 mb-4 pb-2 border-b border-gray-600" {...props}>
+                                                        {children}
+                                                    </h1>
+                                                );
+                                            },
+                                            h2({node, children, ...props}) {
+                                                return (
+                                                    <h2 className="text-lg font-bold mt-5 mb-3" {...props}>
+                                                        {children}
+                                                    </h2>
+                                                );
+                                            }
+                                        }}
+                                    >
                                         {msg.text}
                                     </ReactMarkdown>
                                 )}

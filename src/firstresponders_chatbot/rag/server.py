@@ -7,6 +7,7 @@ handling file uploads and queries, and returning responses.
 
 import os
 import logging
+import uuid
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -106,33 +107,25 @@ class RAGServer:
                     400,
                 )
 
+            # Get or create session ID
+            session_id = request.form.get("session_id", str(uuid.uuid4()))
+
             try:
-                # Save file
+                # Save file with session ID
                 filename = secure_filename(file.filename)
                 file_data = file.read()
-                file_path = self.rag_system.save_uploaded_file(file_data, filename)
+                file_path = self.rag_system.save_uploaded_file(
+                    file_data, filename, session_id
+                )
 
-                # Index file
-                success = self.rag_system.index_file(file_path)
-
-                if success:
-                    return jsonify(
-                        {
-                            "status": "success",
-                            "message": f"File '{filename}' uploaded and indexed successfully",
-                            "file_path": file_path,
-                        }
-                    )
-                else:
-                    return (
-                        jsonify(
-                            {
-                                "status": "error",
-                                "message": f"Failed to index file '{filename}'",
-                            }
-                        ),
-                        500,
-                    )
+                return jsonify(
+                    {
+                        "status": "success",
+                        "message": f"File '{filename}' uploaded and indexed successfully",
+                        "file_path": file_path,
+                        "session_id": session_id,
+                    }
+                )
 
             except Exception as e:
                 logger.error(f"Error handling file upload: {str(e)}")
@@ -161,10 +154,14 @@ class RAGServer:
                 return jsonify({"status": "error", "message": "No query provided"}), 400
 
             query_text = data["query"]
+            # Get session ID (default to None if not provided)
+            session_id = data.get("session_id", "default")
 
             try:
-                # Generate response
-                response = self.rag_system.generate_response(query_text)
+                # Generate response with session context
+                response = self.rag_system.generate_response(
+                    query_text, session_id=session_id
+                )
 
                 return jsonify(
                     {
@@ -172,6 +169,7 @@ class RAGServer:
                         "answer": response["answer"],
                         "context": response["context"],
                         "query": response["query"],
+                        "session_id": session_id,
                     }
                 )
 
@@ -182,6 +180,100 @@ class RAGServer:
                         {
                             "status": "error",
                             "message": f"Error processing query: {str(e)}",
+                        }
+                    ),
+                    500,
+                )
+
+        # Remove file endpoint
+        @self.app.route("/api/remove-file", methods=["POST"])
+        def remove_file():
+            """
+            Remove a file from a session.
+
+            Returns:
+                JSON response with status and message
+            """
+            data = request.json
+            if not data or "file_path" not in data:
+                return (
+                    jsonify({"status": "error", "message": "No file path provided"}),
+                    400,
+                )
+
+            file_path = data["file_path"]
+            session_id = data.get("session_id", "default")
+
+            try:
+                success = self.rag_system.remove_file(file_path, session_id)
+
+                if success:
+                    return jsonify(
+                        {
+                            "status": "success",
+                            "message": f"File removed from session {session_id} successfully",
+                        }
+                    )
+                else:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"File not found in session {session_id}",
+                            }
+                        ),
+                        404,
+                    )
+
+            except Exception as e:
+                logger.error(f"Error removing file: {str(e)}")
+                return (
+                    jsonify(
+                        {"status": "error", "message": f"Error removing file: {str(e)}"}
+                    ),
+                    500,
+                )
+
+        # Clear session endpoint
+        @self.app.route("/api/clear-session", methods=["POST"])
+        def clear_session():
+            """
+            Clear a specific session.
+
+            Returns:
+                JSON response with status and message
+            """
+            data = request.json
+            session_id = data.get("session_id", "default")
+
+            try:
+                success = self.rag_system.clear_session(session_id)
+
+                if success:
+                    return jsonify(
+                        {
+                            "status": "success",
+                            "message": f"Session {session_id} cleared successfully",
+                        }
+                    )
+                else:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Session {session_id} not found or already empty",
+                            }
+                        ),
+                        404,
+                    )
+
+            except Exception as e:
+                logger.error(f"Error clearing session: {str(e)}")
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Error clearing session: {str(e)}",
                         }
                     ),
                     500,
@@ -221,27 +313,49 @@ class RAGServer:
         @self.app.route("/api/files", methods=["GET"])
         def get_indexed_files():
             """
-            Get a list of indexed files.
+            Get a list of indexed files for a session.
 
             Returns:
                 JSON response with the list of indexed files
             """
             try:
-                files = list(self.rag_system.indexed_files)
-                file_info = []
+                # Get session ID from query parameter
+                session_id = request.args.get("session_id", "default")
 
-                for file_path in files:
-                    file_path_obj = Path(file_path)
-                    file_info.append(
+                if session_id in self.rag_system.session_files:
+                    files = list(self.rag_system.session_files[session_id])
+                    file_info = []
+
+                    for file_path in files:
+                        file_path_obj = Path(file_path)
+                        if os.path.exists(file_path):
+                            file_info.append(
+                                {
+                                    "name": file_path_obj.name,
+                                    "path": file_path,
+                                    "size": os.path.getsize(file_path),
+                                    "type": file_path_obj.suffix.lower()[
+                                        1:
+                                    ],  # Remove the dot
+                                }
+                            )
+
+                    return jsonify(
                         {
-                            "name": file_path_obj.name,
-                            "path": file_path,
-                            "size": os.path.getsize(file_path),
-                            "type": file_path_obj.suffix.lower()[1:],  # Remove the dot
+                            "status": "success",
+                            "files": file_info,
+                            "session_id": session_id,
                         }
                     )
-
-                return jsonify({"status": "success", "files": file_info})
+                else:
+                    return jsonify(
+                        {
+                            "status": "success",
+                            "files": [],
+                            "session_id": session_id,
+                            "message": f"No files found for session {session_id}",
+                        }
+                    )
 
             except Exception as e:
                 logger.error(f"Error getting indexed files: {str(e)}")

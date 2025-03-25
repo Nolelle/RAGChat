@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import MessageInput from "./components/MessageInput";
@@ -20,8 +20,8 @@ const App = () => {
     // Get current active chat
     const activeChat = chatSessions.find(chat => chat.id === activeChatId) || null;
     
-    // Get current messages
-    const messages = activeChat ? activeChat.messages : [];
+    // Get current messages using useMemo to prevent unnecessary recalculations
+    const messages = useMemo(() => activeChat ? activeChat.messages : [], [activeChat]);
 
     // Save chat sessions to localStorage whenever they change
     useEffect(() => {
@@ -35,7 +35,9 @@ const App = () => {
             id: newChatId,
             title: "New Chat",
             messages: [],
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // Add a server session ID for file tracking
+            serverSessionId: `session-${newChatId}` 
         };
         
         setChatSessions(prevSessions => [...prevSessions, newChat]);
@@ -79,6 +81,15 @@ const App = () => {
     // Delete a chat session
     const deleteChat = (chatId) => {
         if (window.confirm("Are you sure you want to delete this chat?")) {
+            // Get the server session ID before deleting the chat
+            const chatToDelete = chatSessions.find(chat => chat.id === chatId);
+            const serverSessionId = chatToDelete?.serverSessionId;
+            
+            // Call API to clear the server session
+            if (serverSessionId) {
+                clearServerSession(serverSessionId);
+            }
+            
             setChatSessions(prevSessions => prevSessions.filter(session => session.id !== chatId));
             
             // If we deleted the active chat, set active to the first remaining chat or create a new one
@@ -93,9 +104,36 @@ const App = () => {
         }
     };
 
+    // Clear server session data when deleting a chat
+    const clearServerSession = async (serverSessionId) => {
+        try {
+            const response = await fetch('http://localhost:8000/api/clear-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ session_id: serverSessionId }),
+            });
+            
+            // We don't need to handle the response, just log any errors
+            if (!response.ok) {
+                console.error('Failed to clear server session:', serverSessionId);
+            }
+        } catch (error) {
+            console.error('Error clearing server session:', error);
+        }
+    };
+
     // Clear all chat sessions
     const clearAllChats = () => {
         if (window.confirm("Are you sure you want to clear all chat history?")) {
+            // Clear all server sessions
+            chatSessions.forEach(chat => {
+                if (chat.serverSessionId) {
+                    clearServerSession(chat.serverSessionId);
+                }
+            });
+            
             setChatSessions([]);
             createNewChat();
         }
@@ -112,6 +150,11 @@ const App = () => {
     const handleApiError = (error) => {
         setError(error.message || "An error occurred");
         setTimeout(() => setError(null), 5000); // Clear error after 5 seconds
+    };
+
+    // Get the current server session ID
+    const getServerSessionId = () => {
+        return activeChat?.serverSessionId || 'default';
     };
 
     return(
@@ -135,6 +178,7 @@ const App = () => {
                     addMessage={addMessage} 
                     setIsLoading={setIsLoading}
                     handleApiError={handleApiError}
+                    serverSessionId={getServerSessionId()}
                 />
             </div>
         </div>

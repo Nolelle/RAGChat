@@ -97,6 +97,9 @@ class RAGSystem:
         # Track indexed files
         self.indexed_files = set()
 
+        # Track sessions and their indexed files
+        self.session_files = {}
+
         # Warm up the embedding models
         self.warm_up()
 
@@ -330,18 +333,33 @@ class RAGSystem:
             # Create pipeline components
             pdf_converter = PyPDFToDocument()
             text_converter = TextFileToDocument()
-            splitter = DocumentSplitter(
-                split_by="sentence", split_length=3, split_overlap=1
-            )
+
+            # Use different splitting parameters for PDFs vs text files
+            file_path_obj = Path(file_path)
+            if file_path_obj.suffix.lower() == ".pdf":
+                logger.info(
+                    "PDF file detected - using PDF-optimized splitting parameters"
+                )
+                splitter = DocumentSplitter(
+                    split_by="word",  # Split by word for better context preservation
+                    split_length=150,  # Larger chunks to maintain context
+                    split_overlap=30,  # Decent overlap to prevent context loss
+                )
+            else:
+                splitter = DocumentSplitter(
+                    split_by="sentence", split_length=3, split_overlap=1
+                )
 
             # Create a pipeline
             pipeline = Pipeline()
             pipeline.add_component("splitter", splitter)
 
             # Add appropriate converter based on file type
-            file_path_obj = Path(file_path)
             if file_path_obj.suffix.lower() == ".pdf":
+                logger.info("PDF file detected - using PyPDFToDocument converter")
                 pipeline.add_component("converter", pdf_converter)
+                # Log PDF-specific details
+                logger.info(f"PDF file size: {os.path.getsize(file_path)} bytes")
             elif file_path_obj.suffix.lower() in [".txt", ".md"]:
                 pipeline.add_component("converter", text_converter)
             else:
@@ -352,8 +370,29 @@ class RAGSystem:
             pipeline.connect("converter.documents", "splitter.documents")
 
             # Run pipeline
+            logger.info("Starting document conversion pipeline...")
             result = pipeline.run({"converter": {"sources": [file_path]}})
+
+            if "converter" in result:
+                logger.info(
+                    f"Converter output: {len(result['converter'].get('documents', []))} documents"
+                )
+                # Log sample of converted content
+                if result["converter"].get("documents"):
+                    sample = result["converter"]["documents"][0].content[:500]
+                    logger.info(f"Sample converted content: {sample}...")
+
             documents = result["splitter"]["documents"]
+
+            # Log chunk details
+            logger.info(f"Document splitting results:")
+            logger.info(f"Number of chunks: {len(documents)}")
+            if documents:
+                avg_chunk_size = sum(len(doc.content) for doc in documents) / len(
+                    documents
+                )
+                logger.info(f"Average chunk size: {avg_chunk_size:.2f} characters")
+                logger.info(f"Sample chunk: {documents[0].content[:200]}...")
 
             # Add file metadata to documents
             for doc in documents:
@@ -365,325 +404,371 @@ class RAGSystem:
 
         except Exception as e:
             logger.error(f"Error processing file {file_path}: {str(e)}")
+            logger.exception("Full traceback:")
             return []
 
-    def index_file(self, file_path: str) -> bool:
+    def index_file(self, file_path: str, session_id: str = "default") -> bool:
         """
         Index a file for retrieval.
 
         Args:
             file_path: Path to the file to index
+            session_id: Unique session ID to track files per session
 
         Returns:
             bool: True if indexing was successful, False otherwise
         """
-        # Check if file exists
-        if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
-            return False
-
-        # Check if file is already indexed
-        if file_path in self.indexed_files:
-            logger.info(f"File already indexed: {file_path}")
-            return True
-
         try:
+            # Check if file exists
+            if not os.path.exists(file_path):
+                logger.error(f"File not found: {file_path}")
+                return False
+
+            # Initialize session if not exists
+            if session_id not in self.session_files:
+                self.session_files[session_id] = set()
+
             # Process file
             documents = self.process_file(file_path)
             if not documents:
+                logger.error("No documents were created during processing")
                 return False
 
+            logger.info(f"Created {len(documents)} documents from file")
+            logger.info(f"Sample document content: {documents[0].content[:200]}")
+
+            # Add session ID to document metadata
+            for doc in documents:
+                doc.meta["session_id"] = session_id
+                doc.meta["file_name"] = os.path.basename(file_path)
+                doc.meta["file_path"] = str(file_path)
+
+            # Log document details before embedding
+            logger.info("Document details before embedding:")
+            for i, doc in enumerate(documents[:3]):
+                logger.info(f"Document {i} content preview: {doc.content[:200]}...")
+                logger.info(f"Document {i} metadata: {doc.meta}")
+
             # Embed documents
+            logger.info("Starting document embedding...")
             embedded_documents = self.document_embedder.run(documents=documents)[
                 "documents"
             ]
+            logger.info(f"Embedded {len(embedded_documents)} documents")
+
+            # Verify embeddings
+            missing_embeddings = 0
+            for i, doc in enumerate(embedded_documents):
+                if not hasattr(doc, "embedding") or doc.embedding is None:
+                    missing_embeddings += 1
+                    logger.error(f"Document {i} is missing embeddings!")
+                elif i < 3:  # Log first 3 docs
+                    logger.info(f"Document {i} embedding shape: {len(doc.embedding)}")
+                    logger.info(
+                        f"Document {i} embedding sample: {doc.embedding[:5]}..."
+                    )  # Log first 5 values
+
+            if missing_embeddings > 0:
+                logger.error(f"{missing_embeddings} documents are missing embeddings!")
+                return False
 
             # Write to document store
+            initial_count = self.document_store.count_documents()
+            logger.info(f"Document store count before writing: {initial_count}")
+
+            # Write new documents
             self.document_store.write_documents(embedded_documents)
+            final_count = self.document_store.count_documents()
+            logger.info(f"Document store count after writing: {final_count}")
 
-            # Mark file as indexed
+            documents_added = final_count - initial_count
+            logger.info(f"Added {documents_added} new documents to store")
+
+            # Verify documents were added
+            if documents_added <= 0:
+                logger.error("No new documents were added to the store")
+                return False
+
+            # Mark file as indexed for this session
             self.indexed_files.add(file_path)
+            self.session_files[session_id].add(file_path)
 
-            logger.info(f"Successfully indexed file: {file_path}")
+            logger.info(
+                f"Successfully indexed file: {file_path} for session: {session_id}"
+            )
             return True
 
         except Exception as e:
             logger.error(f"Error indexing file {file_path}: {str(e)}")
+            logger.exception("Full traceback:")
             return False
 
-    def retrieve_context(self, query: str) -> List[Document]:
+    def remove_file(self, file_path: str, session_id: str = "default") -> bool:
+        """
+        Remove an indexed file from the document store.
+
+        Args:
+            file_path: Path to the file to remove
+            session_id: Session ID from which to remove the file
+
+        Returns:
+            bool: True if removal was successful, False otherwise
+        """
+        try:
+            logger.info(f"Removing file: {file_path} from session: {session_id}")
+
+            # Check if file was indexed in this session
+            if (
+                session_id in self.session_files
+                and file_path in self.session_files[session_id]
+            ):
+                # Get all documents from this file and session
+                all_docs = self.document_store.filter_documents()
+
+                # Find documents that match this file path and session ID
+                docs_to_remove = []
+                file_name = os.path.basename(file_path)
+
+                for doc in all_docs:
+                    if (
+                        doc.meta.get("file_path") == file_path
+                        or doc.meta.get("file_name") == file_name
+                    ) and doc.meta.get("session_id") == session_id:
+                        docs_to_remove.append(doc.id)
+
+                if docs_to_remove:
+                    logger.info(f"Found {len(docs_to_remove)} documents to remove")
+                    # Delete the documents
+                    self.document_store.delete_documents(docs_to_remove)
+
+                    # Remove from session tracking
+                    self.session_files[session_id].remove(file_path)
+
+                    logger.info(
+                        f"Successfully removed file: {file_path} from session: {session_id}"
+                    )
+                    return True
+                else:
+                    logger.warning(
+                        f"No documents found for file: {file_path} in session: {session_id}"
+                    )
+            else:
+                logger.warning(f"File {file_path} not found in session: {session_id}")
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error removing file {file_path}: {str(e)}")
+            logger.exception("Full traceback:")
+            return False
+
+    def clear_session(self, session_id: str = "default") -> bool:
+        """
+        Clear all documents associated with a specific session.
+
+        Args:
+            session_id: Session ID to clear
+
+        Returns:
+            bool: True if clearing was successful, False otherwise
+        """
+        try:
+            if session_id in self.session_files:
+                logger.info(f"Clearing session: {session_id}")
+
+                # Get all documents from this session
+                all_docs = self.document_store.filter_documents()
+                docs_to_remove = []
+
+                for doc in all_docs:
+                    if doc.meta.get("session_id") == session_id:
+                        docs_to_remove.append(doc.id)
+
+                if docs_to_remove:
+                    logger.info(
+                        f"Found {len(docs_to_remove)} documents to remove from session"
+                    )
+                    # Delete the documents
+                    self.document_store.delete_documents(docs_to_remove)
+
+                # Clear session tracking
+                self.session_files[session_id] = set()
+
+                logger.info(f"Successfully cleared session: {session_id}")
+                return True
+            else:
+                logger.warning(f"Session {session_id} not found or already empty")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error clearing session {session_id}: {str(e)}")
+            logger.exception("Full traceback:")
+            return False
+
+    def retrieve_context(
+        self, query: str, session_id: str = "default"
+    ) -> List[Document]:
         """
         Retrieve relevant documents for a query.
 
         Args:
             query: The user's query
+            session_id: Session ID to retrieve documents from
 
         Returns:
             List[Document]: List of relevant documents
         """
         try:
             # Check if there are any documents in the store
-            doc_count = self.document_store.count_documents()
+            all_docs = self.document_store.filter_documents()
+
+            # Filter for documents from this session
+            session_docs = [
+                doc for doc in all_docs if doc.meta.get("session_id") == session_id
+            ]
+
+            doc_count = len(session_docs)
             logger.info(
-                f"Retrieving context for query: '{query}'. Document count: {doc_count}"
+                f"Retrieving context for query: '{query}' in session {session_id}. Document count: {doc_count}"
             )
 
             if doc_count == 0:
-                logger.warning("Document store is empty. No documents to retrieve.")
+                logger.warning(
+                    f"No documents found for session {session_id}. Using model knowledge only."
+                )
                 return []
 
-            # Hybrid retrieval approach
-            if self.use_hybrid_retrieval:
-                logger.info("Using hybrid retrieval approach (BM25 + embedding)")
+            # Use a simplified approach that works for all queries
+            # Focus on semantic similarity without special cases
+            try:
+                logger.info("Performing semantic retrieval for query...")
+                embedded_query = self.text_embedder.run(text=query)
+                embedding_shape = len(embedded_query["embedding"])
+                logger.info(f"Query embedded successfully. Shape: {embedding_shape}")
 
-                # Get documents from BM25 retriever
-                try:
-                    bm25_result = self.bm25_retriever.run(query=query, top_k=self.top_k)
-                    bm25_docs = bm25_result["documents"]
-                    logger.info(f"BM25 retriever returned {len(bm25_docs)} documents")
+                # Get documents from embedding retriever
+                embedding_result = self.embedding_retriever.run(
+                    query_embedding=embedded_query["embedding"],
+                    top_k=self.top_k * 2,
+                )
+                embedding_docs = embedding_result["documents"]
+                logger.info(
+                    f"Embedding retrieval returned {len(embedding_docs)} documents"
+                )
 
-                    # DEBUG: Log first BM25 document content
-                    if bm25_docs:
-                        logger.info(f"First BM25 doc: {bm25_docs[0].content[:100]}...")
-                except Exception as e:
-                    logger.error(f"BM25 retriever failed: {str(e)}")
-                    bm25_docs = []
+                # Also get BM25 results for keyword matching
+                logger.info("Performing BM25 retrieval for query...")
+                bm25_result = self.bm25_retriever.run(query=query, top_k=self.top_k * 2)
+                bm25_docs = bm25_result["documents"]
+                logger.info(f"BM25 retriever returned {len(bm25_docs)} documents")
 
-                # Embed query for semantic retrieval
-                try:
-                    embedded_query = self.text_embedder.run(text=query)
-                    logger.info(
-                        f"Embedded query successfully. Embedding shape: {len(embedded_query['embedding'])}"
-                    )
-
-                    # Get documents from embedding retriever
-                    embedding_result = self.embedding_retriever.run(
-                        query_embedding=embedded_query["embedding"], top_k=self.top_k
-                    )
-                    embedding_docs = embedding_result["documents"]
-                    logger.info(
-                        f"Embedding retriever returned {len(embedding_docs)} documents"
-                    )
-
-                    # DEBUG: Log first embedding doc content
-                    if embedding_docs:
-                        logger.info(
-                            f"First embedding doc: {embedding_docs[0].content[:100]}..."
-                        )
-                except Exception as e:
-                    logger.error(f"Embedding retrieval failed: {str(e)}")
-                    logger.error(f"Falling back to BM25 results only")
-                    embedding_docs = []
-
-                # If both retrievers failed, return empty list
-                if not bm25_docs and not embedding_docs:
-                    logger.error("Both retrievers failed, no documents retrieved")
-                    return []
-
-                # Continue with whatever documents we have
-                combined_docs = []
+                # Combine results (deduplicating by document ID)
                 seen_ids = set()
+                all_docs = []
 
-                for doc in bm25_docs + embedding_docs:
+                # Add all documents to results, avoiding duplicates
+                for doc in embedding_docs + bm25_docs:
                     if doc.id not in seen_ids:
-                        combined_docs.append(doc)
+                        all_docs.append(doc)
                         seen_ids.add(doc.id)
 
-                logger.info(f"Combined results: {len(combined_docs)} unique documents")
+                logger.info(f"Combined unique documents: {len(all_docs)}")
 
-                # Rerank the combined results
-                if combined_docs and len(combined_docs) > 0:
-                    try:
-                        reranker_result = self.reranker.run(
-                            documents=combined_docs, query=query
-                        )
-                        reranked_docs = reranker_result["documents"]
-                        logger.info(f"Reranked to top {len(reranked_docs)} documents")
-                    except Exception as e:
-                        logger.error(f"Reranking failed: {str(e)}")
-                        logger.info("Using combined results without reranking")
-                        reranked_docs = combined_docs[: self.rerank_top_k]
+                if not all_docs:
+                    logger.warning("No documents retrieved from any method")
+                    return []
 
-                    # Log the top document titles to verify retrieval is working
-                    if len(reranked_docs) > 0:
-                        for i, doc in enumerate(reranked_docs[:3]):  # Log top 3 docs
-                            score_info = (
-                                f", score: {doc.score}" if hasattr(doc, "score") else ""
-                            )
-                            file_info = (
-                                f" from {doc.meta.get('file_name', 'unknown')}"
-                                if doc.meta
-                                else ""
-                            )
-                            content_preview = (
-                                doc.content[:100] + "..."
-                                if len(doc.content) > 100
-                                else doc.content
-                            )
-                            logger.info(
-                                f"Top doc {i+1}{score_info}{file_info}: {content_preview}"
-                            )
-
-                        # Log the full content of the first document for debugging
-                        logger.info(
-                            f"FULL CONTENT of top document:\n{reranked_docs[0].content}"
-                        )
-
-                    return reranked_docs
-
-                logger.info(
-                    f"Returning {len(combined_docs)} combined documents without reranking"
-                )
-                return combined_docs
-
-            # Fallback to just embedding retrieval
-            else:
-                logger.info("Using embedding retrieval only")
-
+                # Rerank all retrieved documents to get most relevant ones
                 try:
-                    # Embed the query
-                    embedded_query = self.text_embedder.run(text=query)
-                    # Use the embedding for retrieval
-                    result = self.embedding_retriever.run(
-                        query_embedding=embedded_query["embedding"], top_k=self.top_k
-                    )
-                    docs = result["documents"]
-                    logger.info(f"Embedding retriever returned {len(docs)} documents")
-                    return docs
-                except Exception as e:
-                    logger.error(f"Embedding retrieval failed: {str(e)}")
+                    reranker_result = self.reranker.run(documents=all_docs, query=query)
+                    reranked_docs = reranker_result["documents"]
+                    logger.info(f"Reranked to top {len(reranked_docs)} documents")
 
-                    # Fall back to BM25 retrieval
-                    logger.info("Falling back to BM25 retrieval")
-                    try:
-                        bm25_result = self.bm25_retriever.run(
-                            query=query, top_k=self.top_k
-                        )
-                        bm25_docs = bm25_result["documents"]
+                    # Log reranked results
+                    for i, doc in enumerate(reranked_docs[:3]):
                         logger.info(
-                            f"BM25 retriever returned {len(bm25_docs)} documents"
+                            f"Reranked Doc {i+1} score: {doc.score if hasattr(doc, 'score') else 'No score'}"
                         )
-                        return bm25_docs
-                    except Exception as e2:
-                        logger.error(f"BM25 fallback also failed: {str(e2)}")
-                        return []
+                        logger.info(
+                            f"Reranked Doc {i+1} preview: {doc.content[:200]}..."
+                        )
+
+                    return reranked_docs[: self.rerank_top_k]
+                except Exception as e:
+                    logger.error(f"Reranking failed: {str(e)}")
+                    logger.info("Using top documents without reranking")
+                    return all_docs[: self.rerank_top_k]
+
+            except Exception as e:
+                logger.error(f"Retrieval error: {str(e)}")
+                logger.exception("Retrieval error traceback:")
+                return []
 
         except Exception as e:
-            logger.error(f"Error retrieving context for query '{query}': {str(e)}")
-            # Print the full exception traceback for better debugging
-            import traceback
-
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error retrieving context: {str(e)}")
+            logger.exception("Full traceback:")
             return []
 
     def generate_response(
-        self, query: str, context_docs: Optional[List[Document]] = None
+        self,
+        query: str,
+        context_docs: Optional[List[Document]] = None,
+        session_id: str = "default",
     ) -> Dict[str, Any]:
         """
-        Generate a response to a query using the RAG system with Phi-3 or TinyLlama.
-        """
-        logger.info(f"Generating response for query: {query}")
+        Generate a response for the given query using the provided context.
 
+        Args:
+            query: The user's query
+            context_docs: Optional list of context documents
+            session_id: Session ID for context retrieval
+
+        Returns:
+            Dict containing the response and context information
+        """
         try:
+            logger.info(
+                f"Generating response for query: '{query}' in session {session_id}"
+            )
+
             # Retrieve context if not provided
             if context_docs is None:
-                context_docs = self.retrieve_context(query)
-                logger.info(f"Retrieved {len(context_docs)} context documents")
+                context_docs = self.retrieve_context(query, session_id=session_id)
+                logger.info(
+                    f"Retrieved {len(context_docs)} context documents for session {session_id}"
+                )
 
             if not context_docs:
                 logger.warning("No context documents retrieved")
-                # Instead of immediately returning a "not enough information" message,
-                # try to generate a response using the model's pre-trained knowledge
+                # Try to generate a response using the model's pre-trained knowledge
                 return self.generate_from_knowledge(query)
 
+            logger.info(f"Number of context documents: {len(context_docs)}")
+
+            if context_docs:
+                logger.info("Context document details:")
+                for i, doc in enumerate(context_docs[:3]):  # Log first 3 docs
+                    logger.info(f"Doc {i+1}:")
+                    logger.info(f"  Content length: {len(doc.content)}")
+                    logger.info(f"  Content preview: {doc.content[:200]}...")
+                    logger.info(f"  Metadata: {doc.meta}")
+
             # Create context string from documents
-            context_str = ""
-            for i, doc in enumerate(context_docs[:3]):  # Limit to top 3 docs
-                context_str += f"Document {i+1}:\n{doc.content}\n\n"
+            context_str = self._format_context_for_prompt(context_docs)
 
-            # Trim if too long
-            if len(context_str) > 6000:
-                logger.warning(
-                    f"Context too long ({len(context_str)} chars), trimming to 6000 chars"
-                )
-                context_str = context_str[:6000] + "..."
+            # Log the context string length
+            logger.info(f"Context string length: {len(context_str)} chars")
 
-            # Check if we're using TinyLlama model
-            if "TinyLlama" in self.tokenizer.name_or_path:
-                logger.info("Using TinyLlama prompt format")
-                # Format prompt for TinyLlama with instructions to summarize
-                prompt = f"""<s>[INST] <<SYS>>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
-Answer questions using the provided context information, but DO NOT copy the information verbatim. 
-Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
-Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
-Use your own words to explain concepts clearly while maintaining factual accuracy.
+            # Generate prompt based on model type
+            prompt = self._create_prompt_with_context(query, context_str)
 
-When appropriate, use formatting to enhance readability:
-- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
-- Use simple tables for comparing multiple items with similar properties
-- Use headers to separate major sections if the response is lengthy
-
-Example list format:
-1. First item
-2. Second item
-3. Third item
-
-Example bullet format:
-- First point
-- Second point
-- Third point
-
-Example simple table format:
-| Item | Description |
-|------|-------------|
-| Item1 | Description1 |
-| Item2 | Description2 |
-<</SYS>>
-
-I need information about the following topic: {query}
-
-Here's the relevant information:
-{context_str} [/INST]"""
-            else:
-                logger.info("Using Phi-3 prompt format")
-                # Format prompt for Phi-3 with instructions to summarize
-                prompt = f"""<|system|>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
-Answer questions using the provided context information, but DO NOT copy the information verbatim.
-Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
-Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
-Use your own words to explain concepts clearly while maintaining factual accuracy.
-
-When appropriate, use formatting to enhance readability:
-- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
-- Use simple tables for comparing multiple items with similar properties
-- Use headers to separate major sections if the response is lengthy
-
-Example list format:
-1. First item
-2. Second item
-3. Third item
-
-Example bullet format:
-- First point
-- Second point
-- Third point
-
-Example simple table format:
-| Item | Description |
-|------|-------------|
-| Item1 | Description1 |
-| Item2 | Description2 |
-<|user|>
-I need information about the following topic: {query}
-
-Here's the relevant information:
-{context_str}
-<|assistant|>"""
+            # Truncate prompt if necessary
+            if len(prompt) > 8000:  # Conservative limit for most models
+                logger.warning(f"Prompt too long ({len(prompt)} chars), truncating")
+                prompt = self._truncate_prompt(prompt, 8000)
 
             # Log the prompt
-            logger.info(f"PROMPT:\n{prompt}")
+            logger.info(f"PROMPT (first 500 chars):\n{prompt[:500]}...")
 
             # Tokenize the prompt
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -692,9 +777,9 @@ Here's the relevant information:
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=350,  # Increased to allow for more comprehensive summaries
-                    min_new_tokens=75,  # Increased to ensure substantive responses
-                    temperature=0.7,  # Slightly increased to encourage more creative summarization
+                    max_new_tokens=350,  # Increased for comprehensive summaries
+                    min_new_tokens=75,  # Ensure substantive responses
+                    temperature=0.7,  # Slightly increased for creative summarization
                     top_p=0.9,
                     top_k=40,
                     repetition_penalty=1.2,
@@ -706,45 +791,10 @@ Here's the relevant information:
             full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
             # Extract just the assistant's response based on model type
-            if "TinyLlama" in self.tokenizer.name_or_path:
-                # For TinyLlama, the answer is everything after the prompt
-                answer = full_output[len(prompt.replace("[/INST]", "")) :]
-                # Clean up any potential context prefixes
-                answer = answer.replace("Answer Context:", "").strip()
-                if answer.startswith("Document"):
-                    # Try to extract actual answer
-                    answer_parts = answer.split("\n\n")
-                    if len(answer_parts) > 1:
-                        answer = "The primary purpose of personal protective equipment (PPE) for firefighters is to protect them from injury and illness. PPE serves as a barrier that protects firefighters from hazards and minimizes the risk of injury or fatality when working in dangerous environments. This includes protection from toxic gases, vapors, particulate matter, and diseases."
-                    else:
-                        answer = answer_parts[0]
-            else:
-                # For Phi-3, extract after the last <|assistant|> token
-                response_parts = full_output.split("<|assistant|>")
-                answer = response_parts[-1].strip()
-                # Clean up any context prefixes
-                answer = answer.replace("Answer Context:", "").strip()
-                if answer.startswith("Document"):
-                    # Try to extract actual answer
-                    answer_parts = answer.split("\n\n")
-                    if len(answer_parts) > 1:
-                        answer = "The primary purpose of personal protective equipment (PPE) for firefighters is to protect them from injury and illness. PPE serves as a barrier that protects firefighters from hazards and minimizes the risk of injury or fatality when working in dangerous environments. This includes protection from toxic gases, vapors, particulate matter, and diseases."
-                    else:
-                        answer = answer_parts[0]
+            answer = self._extract_answer_from_output(full_output, prompt)
 
             # Get context metadata for response
-            context_metadata = []
-            for doc in context_docs:
-                meta = {
-                    "file_name": doc.meta.get("file_name", "Unknown"),
-                    "file_path": doc.meta.get("file_path", "Unknown"),
-                    "snippet": (
-                        doc.content[:200] + "..."
-                        if len(doc.content) > 200
-                        else doc.content
-                    ),
-                }
-                context_metadata.append(meta)
+            context_metadata = self._prepare_context_metadata(context_docs)
 
             # Create response
             response = {
@@ -766,64 +816,210 @@ Here's the relevant information:
                 "context": [],
             }
 
-    def _extract_relevant_info(self, query: str, context_docs: List[Document]) -> str:
-        """
-        Extract the most relevant information from context documents for a fallback response.
+    def _format_context_for_prompt(self, context_docs: List[Document]) -> str:
+        """Format the context documents into a string for the prompt."""
+        context_str = ""
+        for i, doc in enumerate(context_docs):
+            # Include document number and file source in the context
+            file_name = doc.meta.get("file_name", "Unknown source")
+            context_str += f"Document {i+1} (from {file_name}):\n{doc.content}\n\n"
 
-        Args:
-            query: The user query
-            context_docs: The context documents
+        # Trim if too long
+        if len(context_str) > 6000:
+            logger.warning(
+                f"Context too long ({len(context_str)} chars), trimming to 6000 chars"
+            )
+            context_str = context_str[:6000] + "..."
 
-        Returns:
-            str: Extracted relevant information, or empty string if none found
-        """
-        # Keywords to look for in the documents
-        query_terms = query.lower().split()
-        target_terms = [
-            "nfpa",
-            "1971",
-            "standard",
-            "regulate",
-            "requirements",
-            "protective",
-            "equipment",
-        ]
+        return context_str
 
-        # Look for sentences containing both NFPA and 1971
-        relevant_sentences = []
+    def _create_prompt_with_context(self, query: str, context_str: str) -> str:
+        """Create a prompt with the context for the given model type."""
+        # Check if we're using TinyLlama model
+        if "TinyLlama" in self.tokenizer.name_or_path:
+            logger.info("Using TinyLlama prompt format")
+            # Format prompt for TinyLlama with instructions to summarize
+            prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
+Answer questions using the provided context information, but DO NOT copy the information verbatim. 
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
 
+When appropriate, use markdown formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers with # or ## to separate major sections if the response is lengthy
+- Use **bold** or *italic* for emphasis when needed
+
+For example, format a list like this:
+1. First item
+2. Second item
+3. Third item
+
+Format bullets like this:
+- First point
+- Second point
+- Third point
+
+Format a table like this:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<</SYS>>
+
+I need information about the following topic: {query}
+
+Here's the relevant information from my knowledge base:
+{context_str} [/INST]"""
+        else:
+            logger.info("Using Phi-3 prompt format")
+            # Format prompt for Phi-3 with instructions to summarize
+            prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
+Answer questions using the provided context information, but DO NOT copy the information verbatim.
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use markdown formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers with # or ## to separate major sections if the response is lengthy
+- Use **bold** or *italic* for emphasis when needed
+
+For example, format a list like this:
+1. First item
+2. Second item
+3. Third item
+
+Format bullets like this:
+- First point
+- Second point
+- Third point
+
+Format a table like this:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<|user|>
+I need information about the following topic: {query}
+
+Here's the relevant information from my knowledge base:
+{context_str}
+<|assistant|>"""
+
+        return prompt
+
+    def _truncate_prompt(self, prompt: str, max_length: int) -> str:
+        """Truncate the prompt to the given maximum length while preserving structure."""
+        if len(prompt) <= max_length:
+            return prompt
+
+        # For TinyLlama
+        if "TinyLlama" in self.tokenizer.name_or_path:
+            # Split into parts: system, query, context, and end tag
+            parts = prompt.split(
+                "Here's the relevant information from my knowledge base:"
+            )
+            if len(parts) == 2:
+                prefix = (
+                    parts[0] + "Here's the relevant information from my knowledge base:"
+                )
+                context_and_end = parts[1]
+
+                # Split context and end tag
+                if " [/INST]" in context_and_end:
+                    context, end = context_and_end.split(" [/INST]", 1)
+                    # Calculate how much we need to truncate
+                    available_space = max_length - len(prefix) - len(end) - 3  # Buffer
+                    if available_space > 100:  # Ensure we have reasonable space
+                        truncated_context = context[:available_space] + "..."
+                        return prefix + truncated_context + " [/INST]"
+
+        # For Phi-3
+        else:
+            # Split into system and user parts
+            if "<|user|>" in prompt and "<|assistant|>" in prompt:
+                system_part = prompt.split("<|user|>")[0]
+                user_part = (
+                    "<|user|>" + prompt.split("<|user|>")[1].split("<|assistant|>")[0]
+                )
+                assistant_part = "<|assistant|>"
+
+                # Calculate available space
+                available_space = (
+                    max_length - len(system_part) - len(assistant_part) - 3
+                )
+                if available_space > 100:
+                    # Find where the context starts
+                    if (
+                        "Here's the relevant information from my knowledge base:"
+                        in user_part
+                    ):
+                        prefix, context = user_part.split(
+                            "Here's the relevant information from my knowledge base:", 1
+                        )
+                        prefix += (
+                            "Here's the relevant information from my knowledge base:"
+                        )
+                        # Truncate context
+                        available_space = (
+                            max_length
+                            - len(system_part)
+                            - len(prefix)
+                            - len(assistant_part)
+                            - 3
+                        )
+                        truncated_context = context[:available_space] + "..."
+                        return system_part + prefix + truncated_context + assistant_part
+
+        # Default fallback: simple truncation
+        return prompt[: max_length - 3] + "..."
+
+    def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
+        """Extract the model's answer from the full output."""
+        # For TinyLlama
+        if "TinyLlama" in self.tokenizer.name_or_path:
+            # For TinyLlama, the answer is everything after the prompt
+            answer = full_output[len(prompt.replace("[/INST]", "")) :]
+            # Clean up any potential context prefixes
+            answer = answer.replace("Answer Context:", "").strip()
+        else:
+            # For Phi-3, extract after the last <|assistant|> token
+            response_parts = full_output.split("<|assistant|>")
+            answer = response_parts[-1].strip()
+            # Clean up any context prefixes
+            answer = answer.replace("Answer Context:", "").strip()
+
+        return answer
+
+    def _prepare_context_metadata(self, context_docs: List[Document]) -> List[Dict]:
+        """Prepare context metadata for the response."""
+        context_metadata = []
         for doc in context_docs:
-            content = doc.content
-            # Simple sentence splitting (not perfect but sufficient for this use case)
-            sentences = [s.strip() for s in content.replace("\n", " ").split(".")]
+            meta = {
+                "file_name": doc.meta.get("file_name", "Unknown"),
+                "file_path": doc.meta.get("file_path", "Unknown"),
+                "snippet": (
+                    doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+                ),
+            }
+            context_metadata.append(meta)
+        return context_metadata
 
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if not sentence:
-                    continue
-
-                lower_sentence = sentence.lower()
-                # Check if the sentence contains relevant terms
-                if "nfpa" in lower_sentence and "1971" in lower_sentence:
-                    # Score by number of target terms present
-                    score = sum(1 for term in target_terms if term in lower_sentence)
-                    relevant_sentences.append((sentence, score))
-
-        # Sort by relevance score
-        relevant_sentences.sort(key=lambda x: x[1], reverse=True)
-
-        # Take top 2 sentences
-        top_sentences = [s[0] for s in relevant_sentences[:2]]
-
-        return ". ".join(top_sentences)
-
-    def save_uploaded_file(self, file_data, filename: str) -> str:
+    def save_uploaded_file(
+        self, file_data, filename: str, session_id: str = "default"
+    ) -> str:
         """
         Save an uploaded file to the uploads directory.
 
         Args:
             file_data: The file data
             filename: The original filename
+            session_id: Session ID to associate with this file
 
         Returns:
             str: Path to the saved file
@@ -836,12 +1032,18 @@ Here's the relevant information:
         with open(file_path, "wb") as f:
             f.write(file_data)
 
-        logger.info(f"Saved uploaded file to {file_path}")
+        logger.info(f"Saved uploaded file to {file_path} for session {session_id}")
+
+        # Index the file for this session
+        self.index_file(str(file_path), session_id=session_id)
+
         return str(file_path)
 
     def clear_index(self) -> None:
-        """Clear the document index."""
+        """Clear the entire document index."""
         self.document_store.delete_documents()
+        self.indexed_files.clear()
+        self.session_files.clear()
         logger.info("Document index cleared")
 
     def generate_from_knowledge(self, query: str) -> Dict[str, Any]:
@@ -969,5 +1171,166 @@ Example simple table format:
             return {
                 "query": query,
                 "answer": "I apologize, but I don't have enough information to provide a specific answer to your question. Please try indexing relevant documents first.",
+                "context": [],
+            }
+
+    def generate_response_with_docs(
+        self, query: str, docs: List[Document]
+    ) -> Dict[str, Any]:
+        """
+        Generate a response for a specific query using the provided document list.
+        Used for direct document retrieval for targeted queries.
+
+        Args:
+            query: The user's query
+            docs: The documents to use as context
+
+        Returns:
+            Dict containing the response and context information
+        """
+        try:
+            # Create context string from documents
+            context_str = ""
+            for i, doc in enumerate(docs[:3]):  # Limit to top 3 docs
+                context_str += f"Document {i+1}:\n{doc.content}\n\n"
+
+            # Trim if too long
+            if len(context_str) > 6000:
+                logger.warning(
+                    f"Context too long ({len(context_str)} chars), trimming to 6000 chars"
+                )
+                context_str = context_str[:6000] + "..."
+
+            # Format prompt based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                logger.info("Using TinyLlama prompt format")
+                prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
+Answer questions using the provided context information, but DO NOT copy the information verbatim. 
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<</SYS>>
+
+I need information about the following topic: {query}
+
+Here's the relevant information:
+{context_str} [/INST]"""
+            else:
+                logger.info("Using Phi-3 prompt format")
+                prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
+Answer questions using the provided context information, but DO NOT copy the information verbatim.
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<|user|>
+I need information about the following topic: {query}
+
+Here's the relevant information:
+{context_str}
+<|assistant|>"""
+
+            # Log the prompt
+            logger.info(f"DIRECT SEARCH PROMPT:\n{prompt}")
+
+            # Tokenize the prompt
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+            # Generate the answer
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=350,
+                    min_new_tokens=75,
+                    temperature=0.7,
+                    top_p=0.9,
+                    top_k=40,
+                    repetition_penalty=1.2,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+
+            # Decode the output
+            full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            # Extract the answer based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                answer = full_output[len(prompt.replace("[/INST]", "")) :].strip()
+            else:
+                response_parts = full_output.split("<|assistant|>")
+                answer = response_parts[-1].strip()
+
+            # Get context metadata for response
+            context_metadata = []
+            for doc in docs:
+                meta = {
+                    "file_name": doc.meta.get("file_name", "Unknown"),
+                    "file_path": doc.meta.get("file_path", "Unknown"),
+                    "snippet": (
+                        doc.content[:200] + "..."
+                        if len(doc.content) > 200
+                        else doc.content
+                    ),
+                }
+                context_metadata.append(meta)
+
+            # Create response
+            response = {
+                "query": query,
+                "answer": answer,
+                "context": context_metadata,
+            }
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating response with direct docs: {str(e)}")
+            logger.exception("Full traceback:")
+            return {
+                "query": query,
+                "answer": "Sorry, I encountered an error while processing your request.",
                 "context": [],
             }

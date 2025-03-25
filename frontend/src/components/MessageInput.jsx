@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 
-const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
+const MessageInput = ({ addMessage, setIsLoading, handleApiError, serverSessionId }) => {
     const [file, setFile] = useState(null);
     const [message, setMessage] = useState('');
     const [uploadStatus, setUploadStatus] = useState(null);
@@ -46,6 +46,9 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
             setUploadStatus('uploading');
             const formData = new FormData();
             formData.append('file', uploadedFile);
+            
+            // Add session ID to form data
+            formData.append('session_id', serverSessionId);
             
             const response = await fetch(`${API_URL}/api/upload`, {
                 method: 'POST',
@@ -104,13 +107,16 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
         setIsLoading(true);
         
         try {
-            // Send the query to the API
+            // Send the query to the API with session ID
             const response = await fetch(`${API_URL}/api/query`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ query: message }),
+                body: JSON.stringify({ 
+                    query: message,
+                    session_id: serverSessionId 
+                }),
             });
             
             if (!response.ok) {
@@ -151,6 +157,38 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
+    };
+
+    // Function to remove file from the server
+    const removeFileFromServer = async (filePath) => {
+        try {
+            const response = await fetch(`${API_URL}/api/remove-file`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    file_path: filePath,
+                    session_id: serverSessionId
+                }),
+            });
+            
+            if (!response.ok) {
+                console.error('Failed to remove file from server');
+            }
+        } catch (error) {
+            console.error('Error removing file from server:', error);
+        }
+    };
+
+    // Enhanced clear file function that also removes from server
+    const clearFileAndRemoveFromServer = () => {
+        // If we have file info in context, remove it from server
+        if (file && file.serverPath) {
+            removeFileFromServer(file.serverPath);
+        }
+        
+        clearFile();
     };
 
     return (
@@ -222,7 +260,7 @@ const MessageInput = ({ addMessage, setIsLoading, handleApiError }) => {
                             </span>
                         </div>
                         <button 
-                            onClick={clearFile}
+                            onClick={clearFileAndRemoveFromServer}
                             className="text-gray-400 hover:text-gray-200"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
