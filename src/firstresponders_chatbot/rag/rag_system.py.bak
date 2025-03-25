@@ -14,7 +14,7 @@ import json
 import uuid
 
 import torch
-from transformers import AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 
 from haystack import Pipeline, Document
 from haystack.components.converters import TextFileToDocument, PyPDFToDocument
@@ -43,8 +43,8 @@ class RAGSystem:
         model_dir: str = "tinyllama-1.1b-first-responder-fast",
         uploads_dir: str = "uploads",
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        top_k: int = 20,
-        rerank_top_k: int = 12,
+        top_k: int = 12,
+        rerank_top_k: int = 7,
         use_hybrid_retrieval: bool = True,
     ):
         """
@@ -333,9 +333,7 @@ class RAGSystem:
 
         # Check for high percentage of non-ASCII characters (potential encoding issues)
         non_ascii_count = sum(1 for c in text if ord(c) > 127)
-        if (
-            len(text) > 0 and non_ascii_count / len(text) > 0.4
-        ):  # If > 40% non-ASCII (increased from 30%)
+        if len(text) > 0 and non_ascii_count / len(text) > 0.3:  # If > 30% non-ASCII
             return True
 
         # Check for unusual character distribution (Shannon entropy)
@@ -354,16 +352,14 @@ class RAGSystem:
 
         # English text typically has entropy between 3.5-5.0
         # Garbled text or encrypted content often has higher entropy (>5.5)
-        # Increased threshold to be more permissive with technical content
-        if entropy > 6.0:  # Increased from 5.5 to 6.0
+        if entropy > 5.5:
             return True
 
         # Check for unusual character sequences (random distribution of special chars)
         import re
 
         # Look for sequences like "iaIAs" or "síaà" that are unlikely in normal text
-        # Made pattern more specific to reduce false positives
-        unusual_pattern = r"([^\w\s]{4,}|([a-zA-Z][^a-zA-Z]){5,})"  # Increased sequence length requirements
+        unusual_pattern = r"([^\w\s]{3,}|([a-zA-Z][^a-zA-Z]){4,})"
         if re.search(unusual_pattern, text):
             return True
 
@@ -402,8 +398,8 @@ class RAGSystem:
                 # Use a more conservative splitting approach for PDFs
                 splitter = DocumentSplitter(
                     split_by="passage",  # Split by passage for better context preservation
-                    split_length=400,  # Larger chunks to maintain context (increased from 200)
-                    split_overlap=100,  # Increased overlap to prevent context loss (increased from 50)
+                    split_length=200,  # Larger chunks to maintain context
+                    split_overlap=50,  # Increased overlap to prevent context loss
                 )
             else:
                 # Use same passage-based splitting for text files but with slightly smaller chunks
@@ -412,8 +408,8 @@ class RAGSystem:
                 )
                 splitter = DocumentSplitter(
                     split_by="passage",  # Changed from "sentence" to "passage" for better context
-                    split_length=250,  # Increased from 150 for better context preservation
-                    split_overlap=50,  # Increased from 30 for better overlap
+                    split_length=150,  # Increased from 3 to 150 for better context preservation
+                    split_overlap=30,  # Increased from 1 to 30 for better overlap
                 )
 
             # Create a pipeline
@@ -790,47 +786,11 @@ class RAGSystem:
                 )
                 return []
 
-            # Special handling for SCBA-related queries to improve retrieval
-            is_scba_query = False
-            if any(
-                term in query.lower()
-                for term in [
-                    "scba",
-                    "breathing apparatus",
-                    "doffing",
-                    "donning",
-                    "self-contained",
-                ]
-            ):
-                is_scba_query = True
-                logger.info(
-                    "Detected SCBA-related query, applying specialized retrieval strategy"
-                )
-                # For SCBA queries, we'll combine results from both embedding and keyword-based search
-                # with specialized keywords to boost recall
-
-                # Add additional search terms for better matches
-                expanded_query = query
-                if "doffing" in query.lower() and "scba" in query.lower():
-                    expanded_query = (
-                        f"{query} remove taking off self-contained breathing apparatus"
-                    )
-                elif "donning" in query.lower() and "scba" in query.lower():
-                    expanded_query = (
-                        f"{query} put on wearing self-contained breathing apparatus"
-                    )
-                elif "scba" in query.lower():
-                    expanded_query = f"{query} self-contained breathing apparatus"
-
-                logger.info(f"Expanded query: '{expanded_query}'")
-            else:
-                expanded_query = query
-
             # Use a simplified approach that works for all queries
             # Focus on semantic similarity without special cases
             try:
                 logger.info("Performing semantic retrieval for query...")
-                embedded_query = self.text_embedder.run(text=expanded_query)
+                embedded_query = self.text_embedder.run(text=query)
                 embedding_shape = len(embedded_query["embedding"])
                 logger.info(f"Query embedded successfully. Shape: {embedding_shape}")
 
@@ -846,35 +806,9 @@ class RAGSystem:
 
                 # Also get BM25 results for keyword matching
                 logger.info("Performing BM25 retrieval for query...")
-                bm25_result = self.bm25_retriever.run(
-                    query=expanded_query, top_k=self.top_k * 2
-                )
+                bm25_result = self.bm25_retriever.run(query=query, top_k=self.top_k * 2)
                 bm25_docs = bm25_result["documents"]
                 logger.info(f"BM25 retriever returned {len(bm25_docs)} documents")
-
-                # If it's an SCBA query, try additional keyword search with specific terms
-                if is_scba_query:
-                    logger.info("Performing additional SCBA-specific keyword search...")
-                    scba_terms = [
-                        "SCBA",
-                        "self-contained breathing apparatus",
-                        "doffing",
-                        "donning",
-                        "air pack",
-                        "respirator",
-                        "breathing protection",
-                    ]
-                    additional_docs = []
-
-                    for term in scba_terms:
-                        term_result = self.bm25_retriever.run(query=term, top_k=5)
-                        additional_docs.extend(term_result["documents"])
-
-                    logger.info(
-                        f"SCBA-specific search returned {len(additional_docs)} additional documents"
-                    )
-                    # Combine with other results
-                    bm25_docs.extend(additional_docs)
 
                 # Combine results (deduplicating by document ID)
                 seen_ids = set()
@@ -906,13 +840,6 @@ class RAGSystem:
                         logger.info(
                             f"Reranked Doc {i+1} preview: {doc.content[:200]}..."
                         )
-
-                    # For SCBA queries, ensure we have a good mix of documents
-                    if is_scba_query and len(reranked_docs) > self.rerank_top_k:
-                        # Keep all docs but take more than the usual limit
-                        return reranked_docs[
-                            : min(self.rerank_top_k + 5, len(reranked_docs))
-                        ]
 
                     return reranked_docs[: self.rerank_top_k]
                 except Exception as e:
@@ -1165,12 +1092,6 @@ You are a first responder assistant designed to provide accurate, concise inform
 Answer questions using the provided context information, but DO NOT copy the information verbatim. 
 Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
 Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
-
-For safety-critical procedures like SCBA (Self-Contained Breathing Apparatus) use, fire response, or medical interventions:
-- Provide precise, clear step-by-step instructions in the correct sequence
-- Emphasize safety protocols and critical warnings
-- Include all necessary steps without omitting important details
-
 Use your own words to explain concepts clearly while maintaining factual accuracy.
 Cite the source document numbers when possible (e.g., "According to Document 1...").
 
@@ -1191,12 +1112,6 @@ You are a first responder assistant designed to provide accurate, concise inform
 Answer questions using the provided context information, but DO NOT copy the information verbatim.
 Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
 Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
-
-For safety-critical procedures like SCBA (Self-Contained Breathing Apparatus) use, fire response, or medical interventions:
-- Provide precise, clear step-by-step instructions in the correct sequence
-- Emphasize safety protocols and critical warnings
-- Include all necessary steps without omitting important details
-
 Use your own words to explain concepts clearly while maintaining factual accuracy.
 Cite the source document numbers when possible (e.g., "According to Document 1...").
 
@@ -1467,4 +1382,273 @@ Focus on delivering complete, accurate responses that are well-organized and hel
                 "query": query,
                 "answer": "Sorry, I encountered an error while processing your request.",
                 "context": [],
+            }
+
+    def generate_response_with_docs(
+        self, query: str, docs: List[Document]
+    ) -> Dict[str, Any]:
+        """
+        Generate a response for a specific query using the provided document list.
+        Used for direct document retrieval for targeted queries.
+
+        Args:
+            query: The user's query
+            docs: The documents to use as context
+
+        Returns:
+            Dict containing the response and context information
+        """
+        try:
+            # Create context string from documents
+            context_str = ""
+            for i, doc in enumerate(docs[:3]):  # Limit to top 3 docs
+                context_str += f"Document {i+1}:\n{doc.content}\n\n"
+
+            # Trim if too long
+            if len(context_str) > 6000:
+                logger.warning(
+                    f"Context too long ({len(context_str)} chars), trimming to 6000 chars"
+                )
+                context_str = context_str[:6000] + "..."
+
+            # Format prompt based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                logger.info("Using TinyLlama prompt format")
+                prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
+Answer questions using the provided context information, but DO NOT copy the information verbatim. 
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<</SYS>>
+
+I need information about the following topic: {query}
+
+Here's the relevant information:
+{context_str} [/INST]"""
+            else:
+                logger.info("Using Phi-3 prompt format")
+                prompt = f"""<|system|>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
+Answer questions using the provided context information, but DO NOT copy the information verbatim.
+Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
+Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Use your own words to explain concepts clearly while maintaining factual accuracy.
+
+When appropriate, use formatting to enhance readability:
+- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
+- Use simple tables for comparing multiple items with similar properties
+- Use headers to separate major sections if the response is lengthy
+
+Example list format:
+1. First item
+2. Second item
+3. Third item
+
+Example bullet format:
+- First point
+- Second point
+- Third point
+
+Example simple table format:
+| Item | Description |
+|------|-------------|
+| Item1 | Description1 |
+| Item2 | Description2 |
+<|user|>
+I need information about the following topic: {query}
+
+Here's the relevant information:
+{context_str}
+<|assistant|>"""
+
+            # Log the prompt
+            logger.info(f"DIRECT SEARCH PROMPT:\n{prompt}")
+
+            # Tokenize the prompt
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+            # Generate the answer
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=350,
+                    min_new_tokens=75,
+                    temperature=0.7,
+                    top_p=0.9,
+                    top_k=40,
+                    repetition_penalty=1.2,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+
+            # Decode the output
+            full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            # Extract the answer based on model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                answer = full_output[len(prompt.replace("[/INST]", "")) :].strip()
+            else:
+                response_parts = full_output.split("<|assistant|>")
+                answer = response_parts[-1].strip()
+
+            # Get context metadata for response
+            context_metadata = []
+            for doc in docs:
+                meta = {
+                    "file_name": doc.meta.get("file_name", "Unknown"),
+                    "file_path": doc.meta.get("file_path", "Unknown"),
+                    "snippet": (
+                        doc.content[:200] + "..."
+                        if len(doc.content) > 200
+                        else doc.content
+                    ),
+                }
+                context_metadata.append(meta)
+
+            # Create response
+            response = {
+                "query": query,
+                "answer": answer,
+                "context": context_metadata,
+            }
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating response with direct docs: {str(e)}")
+            logger.exception("Full traceback:")
+            return {
+                "query": query,
+                "answer": "Sorry, I encountered an error while processing your request.",
+                "context": [],
+            }
+
+    def test_with_base_model(
+        self, query: str, session_id: str = "default"
+    ) -> Dict[str, Any]:
+        """
+        Test the same query with the base model instead of the fine-tuned one.
+        This helps diagnose if the RAG issues are related to fine-tuning.
+
+        Args:
+            query: The user's query
+            session_id: Session ID for context retrieval
+
+        Returns:
+            Dict containing the response from the base model
+        """
+        logger.info(f"Testing query with base model: '{query}'")
+
+        try:
+            # Save current model
+            current_model = self.model
+            current_tokenizer = self.tokenizer
+
+            # Load base model temporarily
+            logger.info("Temporarily loading base model for comparison")
+
+            # Detect hardware
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = torch.device("mps")
+                logger.info("Using Apple Silicon acceleration for base model")
+            elif torch.cuda.is_available():
+                device = torch.device("cuda")
+                logger.info(f"Using NVIDIA GPU for base model")
+            else:
+                device = torch.device("cpu")
+                logger.info("Using CPU for base model (this might be slower)")
+
+            # Load base models based on the current model type
+            if "TinyLlama" in self.tokenizer.name_or_path:
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+
+                # Load TinyLlama base model
+                model = AutoModelForCausalLM.from_pretrained(
+                    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                    device_map="auto" if torch.cuda.is_available() else None,
+                    torch_dtype=torch.float16,
+                )
+                if device.type == "mps":
+                    model = model.to(device)
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+                )
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+            else:
+                # Load Phi-3 base model
+                from transformers import AutoModelForCausalLM
+
+                model = AutoModelForCausalLM.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct",
+                    device_map="auto" if torch.cuda.is_available() else None,
+                    torch_dtype=torch.float16,
+                )
+                if device.type == "mps":
+                    model = model.to(device)
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    "microsoft/Phi-3-mini-4k-instruct"
+                )
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+
+            # Set models temporarily
+            self.model = model
+            self.tokenizer = tokenizer
+            self.device = device
+
+            # Retrieve context docs
+            context_docs = self.retrieve_context(query, session_id=session_id)
+
+            # Generate response with base model
+            base_model_response = self.generate_response(
+                query, context_docs, session_id
+            )
+
+            # Add a marker to show this is from the base model
+            base_model_response["model_type"] = "base"
+
+            # Restore original model
+            self.model = current_model
+            self.tokenizer = current_tokenizer
+
+            return base_model_response
+
+        except Exception as e:
+            logger.error(f"Error testing with base model: {str(e)}")
+            logger.exception("Full traceback:")
+
+            # Ensure original model is restored
+            self.model = current_model
+            self.tokenizer = current_tokenizer
+
+            return {
+                "query": query,
+                "answer": f"Error testing with base model: {str(e)}",
+                "context": [],
+                "model_type": "base_error",
             }

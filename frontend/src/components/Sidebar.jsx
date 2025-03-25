@@ -20,7 +20,10 @@ const Sidebar = ({
     };
 
     // Filter out empty chats (with no messages) from the history display
-    const nonEmptyChats = chatSessions.filter(chat => chat.messages.length > 0);
+    // and sort them with newest chats on top
+    const nonEmptyChats = chatSessions
+        .filter(chat => chat.messages.length > 0)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     return (
         <div className="w-64 bg-gray-900 text-white p-4 flex flex-col h-full border-r border-gray-800">

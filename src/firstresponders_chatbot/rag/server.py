@@ -62,6 +62,85 @@ class RAGServer:
         # Register routes
         self._register_routes()
 
+    def _verify_pdf_integrity(self, file_data) -> tuple:
+        """
+        Verify that a PDF file is valid and readable.
+
+        Args:
+            file_data: Binary content of the PDF file
+
+        Returns:
+            tuple: (is_valid, message) where is_valid is a boolean and message is a string
+        """
+        try:
+            # Only import PyPDF2 when needed to verify PDFs
+            import io
+            import PyPDF2
+
+            # Create a file-like object
+            pdf_stream = io.BytesIO(file_data)
+
+            # Try to read the PDF
+            try:
+                pdf_reader = PyPDF2.PdfReader(pdf_stream)
+                num_pages = len(pdf_reader.pages)
+
+                # Check if we can access content
+                if num_pages > 0:
+                    # Try to extract text from the first page
+                    first_page = pdf_reader.pages[0]
+                    text = first_page.extract_text()
+
+                    # Check if text extraction worked
+                    if not text or text.strip() == "":
+                        logger.warning(
+                            "PDF appears valid but no text could be extracted from the first page"
+                        )
+                        return (
+                            True,
+                            "PDF is valid, but may not contain extractable text. Results might be limited.",
+                        )
+
+                    # If we have text and it looks like garbled content
+                    import re
+
+                    if re.search(r"[^\x00-\x7F]{5,}", text) or re.search(
+                        r"([^\w\s]{3,}|([a-zA-Z][^a-zA-Z]){4,})", text
+                    ):
+                        logger.warning(
+                            "PDF contains text but it appears to be corrupted or encoded improperly"
+                        )
+                        return (
+                            True,
+                            "PDF contains text but it may be improperly encoded. Results might be affected.",
+                        )
+
+                    # If PDF has few pages, ensure we can read them all
+                    if num_pages < 5:
+                        all_text = ""
+                        for i in range(num_pages):
+                            page_text = pdf_reader.pages[i].extract_text()
+                            all_text += page_text
+
+                        # If total text is very small, warn
+                        if len(all_text.strip()) < 100:
+                            return (
+                                True,
+                                "PDF contains very little extractable text. Results might be limited.",
+                            )
+
+                return True, f"PDF is valid with {num_pages} pages"
+            except Exception as e:
+                logger.error(f"Error reading PDF: {str(e)}")
+                return False, f"PDF could not be read: {str(e)}"
+
+        except ImportError:
+            logger.warning("PyPDF2 not available for PDF verification")
+            return True, "PDF verification skipped (PyPDF2 not available)"
+        except Exception as e:
+            logger.error(f"Error verifying PDF: {str(e)}")
+            return False, f"PDF verification failed: {str(e)}"
+
     def _register_routes(self):
         """Register routes for the Flask app."""
 
@@ -111,24 +190,53 @@ class RAGServer:
             session_id = request.form.get("session_id", str(uuid.uuid4()))
 
             try:
-                # Save file with session ID
-                filename = secure_filename(file.filename)
+                # Read file data
                 file_data = file.read()
+
+                # For PDFs, verify integrity before processing
+                filename = secure_filename(file.filename)
+                warnings = []
+
+                if filename.lower().endswith(".pdf"):
+                    is_valid, message = self._verify_pdf_integrity(file_data)
+                    if not is_valid:
+                        return (
+                            jsonify(
+                                {
+                                    "status": "error",
+                                    "message": f"Invalid PDF file: {message}",
+                                }
+                            ),
+                            400,
+                        )
+                    elif "may" in message or "might" in message:
+                        # Add warning to response if there might be issues
+                        warnings.append(message)
+
+                # Save and index file with session ID
                 file_path = self.rag_system.save_uploaded_file(
                     file_data, filename, session_id
                 )
 
-                return jsonify(
-                    {
-                        "status": "success",
-                        "message": f"File '{filename}' uploaded and indexed successfully",
-                        "file_path": file_path,
-                        "session_id": session_id,
-                    }
-                )
+                response = {
+                    "status": "success",
+                    "message": f"File '{filename}' uploaded and indexed successfully",
+                    "file_path": file_path,
+                    "session_id": session_id,
+                }
+
+                # Add warnings if any were detected
+                if warnings:
+                    response["warnings"] = warnings
+
+                return jsonify(response)
 
             except Exception as e:
                 logger.error(f"Error handling file upload: {str(e)}")
+                import traceback
+
+                logger.error(f"Traceback: {traceback.format_exc()}")
+
                 return (
                     jsonify(
                         {

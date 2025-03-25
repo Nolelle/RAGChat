@@ -15,6 +15,9 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
     
     // Function to extract filename without UUID prefix
     const formatFileName = (fileName) => {
+        // Handle undefined or null fileName
+        if (!fileName) return 'Unknown file';
+        
         // Check if the filename has a UUID pattern (32 hex chars + underscore)
         const uuidPattern = /^[a-f0-9]{32}_(.+)$/i;
         const match = fileName.match(uuidPattern);
@@ -139,17 +142,19 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                     {expandedSources[index] && (
                                         <div className="mt-2 space-y-2 bg-gray-800 p-2 rounded">
                                             {msg.context.map((ctx, ctxIndex) => (
-                                                <div 
-                                                    key={ctxIndex} 
-                                                    className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
-                                                >
-                                                    <div className="font-medium text-blue-300 mb-1">
-                                                        {formatFileName(ctx.file_name)}
+                                                ctx && (
+                                                    <div 
+                                                        key={ctxIndex} 
+                                                        className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
+                                                    >
+                                                        <div className="font-medium text-blue-300 mb-1">
+                                                            {formatFileName(ctx.file_name)}
+                                                        </div>
+                                                        <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
+                                                            {ctx.snippet || 'No snippet available'}
+                                                        </div>
                                                     </div>
-                                                    <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
-                                                        {ctx.snippet}
-                                                    </div>
-                                                </div>
+                                                )
                                             ))}
                                         </div>
                                     )}
