@@ -21,7 +21,7 @@ Before training the model, ensure you have:
 - Python 3.9+ installed
 - Required packages installed (run `pip install -e .` from the project root)
 - NLTK resources downloaded (will be downloaded automatically on first run)
-- Sufficient disk space for model checkpoints (~2-4GB for flan-t5-large, ~1-2GB for TinyLlama)
+- Sufficient disk space for model checkpoints (~1-2GB for TinyLlama)
 - Appropriate hardware (see [Hardware-Specific Optimizations](#hardware-specific-optimizations))
 
 ## Dataset Preparation
@@ -71,7 +71,7 @@ python create_dataset.py --model_format tinyllama
 To rebuild the dataset with enhanced processing:
 
 ```bash
-python train.py --rebuild_dataset --output_dir flan-t5-large-first-responder
+python train.py --rebuild_dataset --output_dir tinyllama-1.1b-first-responder-fast
 ```
 
 This will apply:
@@ -85,7 +85,7 @@ This will apply:
 The basic training command is:
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast
 ```
 
 ### Key Parameters
@@ -106,30 +106,24 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 For Apple Silicon, use these settings for optimal performance:
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder --freeze_encoder --max_source_length 256 --max_target_length 64 --gradient_accumulation_steps 16
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --gradient_accumulation_steps 8
 ```
 
 - The system automatically detects Apple Silicon and enables MPS acceleration
 - Avoid `--fp16` as it's not fully compatible with MPS
 - Reduce sequence lengths to improve memory usage
-- Consider using a smaller model (flan-t5-base, TinyLlama, or Llama 3.1 1B) for faster training
-
-For TinyLlama on Apple Silicon:
-
-```bash
-python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --gradient_accumulation_steps 8
-```
+- Consider using TinyLlama or Llama 3.1 1B for faster training
 
 ### NVIDIA GPUs
 
 For NVIDIA GPUs, leverage these options:
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder --fp16 --load_in_8bit
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --fp16 --load_in_4bit
 ```
 
 - The `--fp16` flag enables mixed precision training for faster computation
-- The `--load_in_8bit` flag enables 8-bit quantization for memory efficiency (requires bitsandbytes)
+- The `--load_in_4bit` flag enables 4-bit quantization for memory efficiency (requires bitsandbytes)
 - Adjust batch size and gradient accumulation based on available VRAM
 
 ### CPU-Only Environment
@@ -137,38 +131,11 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 For CPU-only training:
 
 ```bash
-python train.py --model_name google/flan-t5-small --output_dir flan-t5-small-first-responder --freeze_encoder --num_train_epochs 3
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --num_train_epochs 3
 ```
 
-- Use smaller models (flan-t5-small or TinyLlama)
+- Use TinyLlama for CPU training
 - Reduce sequence lengths and epochs for faster completion
-- Consider freezing the encoder to speed up training
-
-## Two-Stage Training Process
-
-For optimal results with Flan-T5 models, we recommend a two-stage training approach:
-
-### Stage 1: Freeze Encoder
-
-```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder-stage1 --freeze_encoder --num_train_epochs 3
-```
-
-This stage:
-- Freezes the encoder layers to focus training on the decoder
-- Requires less memory and trains faster
-- Quickly adapts the model to the first responder domain
-
-### Stage 2: Full Model Fine-tuning
-
-```bash
-python train.py --model_name ./flan-t5-large-first-responder-stage1 --output_dir flan-t5-large-first-responder-final --num_train_epochs 5
-```
-
-This stage:
-- Takes the model from Stage 1 and fine-tunes all layers
-- Allows the encoder to adapt to the specific language of first responder documents
-- Creates a more powerful and accurate model
 
 ## TinyLlama Training
 
@@ -216,18 +183,14 @@ To view evaluation metrics:
   - Decrease batch size
   - Increase gradient accumulation steps
   - Use a smaller model
-  - Enable 8-bit quantization with `--load_in_8bit`
-
-#### "None of the inputs have requires_grad=True"
-- Warning when using gradient checkpointing with frozen encoder
-- Solution: This is expected behavior when using `--freeze_encoder`
+  - Enable 4-bit quantization with `--load_in_4bit`
 
 #### Slow training on Apple Silicon
 - Solutions:
-  - Use `--freeze_encoder` flag
   - Reduce sequence lengths
   - Reduce gradient accumulation steps
-  - Consider using TinyLlama instead of larger models
+  - Use smaller batch sizes
+  - Optimize quantization settings
 
 ## Advanced Configurations
 
@@ -236,7 +199,7 @@ To view evaluation metrics:
 For specialized vocabularies:
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder --tokenizer_name your-custom-tokenizer
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --tokenizer_name your-custom-tokenizer
 ```
 
 ### Fine-tuning from Your Own Checkpoint
@@ -244,7 +207,7 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 To continue training from a checkpoint:
 
 ```bash
-python train.py --model_name ./path/to/your/checkpoint --output_dir flan-t5-large-first-responder-continued
+python train.py --model_name ./path/to/your/checkpoint --output_dir tinyllama-1.1b-first-responder-continued
 ```
 
 ### Dataset Filtering

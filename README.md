@@ -9,7 +9,6 @@ The FirstRespondersChatbot is designed to assist first responders by providing q
 1. **Fine-tuned Language Model**: Models available include:
    - **TinyLlama 1.1B**: Our primary model optimized for fast inference ("tinyllama-1.1b-first-responder-fast")
    - **Llama 3.1 1B**: Option for state-of-the-art performance
-   - Flan-T5 model: Legacy support for older deployments
 2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
 3. **Hybrid Retrieval**: Combines semantic search with keyword-based retrieval for better results
 

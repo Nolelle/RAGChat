@@ -29,7 +29,7 @@ def main():
     parser.add_argument(
         "--model-dir",
         type=str,
-        default="flan-t5-first-responder",
+        default="tinyllama-1.1b-first-responder-fast",
         help="Directory containing the fine-tuned model",
     )
     parser.add_argument(

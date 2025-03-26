@@ -12,7 +12,6 @@ The FirstRespondersChatbot project supports multiple models:
 
 - **TinyLlama 1.1B** (default, "tinyllama-1.1b-first-responder-fast"): Optimized for fast inference
 - **Llama 3.1 1B**: Excellent quality with moderate speed
-- **Flan-T5**: Original model architecture, multiple sizes available
 
 Choose the model that best fits your performance and quality requirements.
 
@@ -41,7 +40,7 @@ document_store.write_documents([
 # 3. Set up the generator using your fine-tuned model
 generator = HuggingFaceLocalGenerator(
     model="./tinyllama-1.1b-first-responder-fast",  # Path to your trained model
-    task="text-generation",  # Use "text2text-generation" for Flan-T5 models
+    task="text-generation",
     generation_kwargs={
         "max_new_tokens": 100,
         "temperature": 0.7,
@@ -171,22 +170,6 @@ generator = HuggingFaceLocalGenerator(
         "top_p": 0.9,
         "top_k": 40,
         "repetition_penalty": 1.2,
-        "do_sample": True,
-    }
-)
-```
-
-### Flan-T5 Configuration
-
-For Flan-T5 models:
-
-```python
-generator = HuggingFaceLocalGenerator(
-    model="./flan-t5-large-first-responder",
-    task="text2text-generation",
-    generation_kwargs={
-        "max_new_tokens": 150,
-        "temperature": 0.7,
         "do_sample": True,
     }
 )

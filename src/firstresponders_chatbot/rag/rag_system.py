@@ -3,7 +3,7 @@ RAG system module for the FirstRespondersChatbot project.
 
 This module implements the backend logic for the Retrieval-Augmented Generation (RAG)
 system, indexing uploaded PDF/text files, retrieving relevant context, and generating
-responses using the fine-tuned Flan-T5-Small model.
+responses using the fine-tuned TinyLlama model.
 """
 
 import logging
