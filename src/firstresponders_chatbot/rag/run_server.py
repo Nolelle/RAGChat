@@ -29,7 +29,7 @@ def main():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="microsoft/phi-3-medium-4k-instruct",
+        default="meta-llama/Llama-2-7b-chat-hf",
         help="Name or path of the model to use",
     )
     parser.add_argument(
