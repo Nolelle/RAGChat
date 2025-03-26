@@ -169,52 +169,21 @@ class RAGSystem:
                     f"Attempting to load fine-tuned model from {self.model_dir}"
                 )
 
-                # Check if it's a TinyLlama model
-                if "tinyllama" in str(self.model_dir).lower():
-                    logger.info("Loading TinyLlama model")
-                    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-                    # Load model with or without quantization based on device
-                    if use_quantization:
-                        model = AutoModelForCausalLM.from_pretrained(
-                            self.model_dir,
-                            quantization_config=quantization_config,
-                            device_map="auto",
-                            torch_dtype=torch.float16,
-                        )
-                    else:
-                        model = AutoModelForCausalLM.from_pretrained(
-                            self.model_dir,
-                            device_map="auto" if torch.cuda.is_available() else None,
-                            torch_dtype=torch.float16,
-                        )
-                        # For MPS, manually move model to device
-                        if device.type == "mps":
-                            model = model.to(device)
-
-                    tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
-
-                    # Set padding token if not set
-                    if tokenizer.pad_token is None:
-                        tokenizer.pad_token = tokenizer.eos_token
-
-                    logger.info("Successfully loaded fine-tuned TinyLlama model")
-                    return model, tokenizer, device
-
-                # Otherwise, try to load as a Phi-3 model
-                from transformers import AutoModelForCausalLM
+                # Loading TinyLlama model
+                logger.info("Loading TinyLlama model")
+                from transformers import AutoModelForCausalLM, AutoTokenizer
 
                 # Load model with or without quantization based on device
                 if use_quantization:
                     model = AutoModelForCausalLM.from_pretrained(
-                        "microsoft/Phi-3-mini-4k-instruct",
+                        self.model_dir,
                         quantization_config=quantization_config,
                         device_map="auto",
                         torch_dtype=torch.float16,
                     )
                 else:
                     model = AutoModelForCausalLM.from_pretrained(
-                        "microsoft/Phi-3-mini-4k-instruct",
+                        self.model_dir,
                         device_map="auto" if torch.cuda.is_available() else None,
                         torch_dtype=torch.float16,
                     )
@@ -222,43 +191,15 @@ class RAGSystem:
                     if device.type == "mps":
                         model = model.to(device)
 
-                # Load tokenizer
-                tokenizer = AutoTokenizer.from_pretrained(
-                    "microsoft/Phi-3-mini-4k-instruct"
-                )
+                tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
 
                 # Set padding token if not set
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
 
-                # Try to load the LoRA adapter weights
-                adapter_path = os.path.join(self.model_dir, "adapter")
-                if os.path.exists(adapter_path):
-                    logger.info(f"Loading LoRA adapter from {adapter_path}")
-                    from peft import PeftModel
+                logger.info("Successfully loaded fine-tuned TinyLlama model")
+                return model, tokenizer, device
 
-                    model = PeftModel.from_pretrained(model, adapter_path)
-                else:
-                    # If adapter doesn't exist, may need to try loading the full model
-                    logger.info("LoRA adapter not found, trying to load full model")
-                    if use_quantization:
-                        model = AutoModelForCausalLM.from_pretrained(
-                            self.model_dir,
-                            quantization_config=quantization_config,
-                            device_map="auto",
-                            torch_dtype=torch.float16,
-                        )
-                    else:
-                        model = AutoModelForCausalLM.from_pretrained(
-                            self.model_dir,
-                            device_map="auto" if torch.cuda.is_available() else None,
-                            torch_dtype=torch.float16,
-                        )
-                        # For MPS, manually move model to device
-                        if device.type == "mps":
-                            model = model.to(device)
-
-                logger.info("Successfully loaded fine-tuned model")
             except Exception as e:
                 logger.warning(f"Could not load fine-tuned model: {str(e)}")
                 logger.info("Falling back to TinyLlama base model")
@@ -334,8 +275,8 @@ class RAGSystem:
         # Check for high percentage of non-ASCII characters (potential encoding issues)
         non_ascii_count = sum(1 for c in text if ord(c) > 127)
         if (
-            len(text) > 0 and non_ascii_count / len(text) > 0.4
-        ):  # If > 40% non-ASCII (increased from 30%)
+            len(text) > 0 and non_ascii_count / len(text) > 0.3
+        ):  # Reduced threshold from 0.4 to 0.3
             return True
 
         # Check for unusual character distribution (Shannon entropy)
@@ -354,17 +295,24 @@ class RAGSystem:
 
         # English text typically has entropy between 3.5-5.0
         # Garbled text or encrypted content often has higher entropy (>5.5)
-        # Increased threshold to be more permissive with technical content
-        if entropy > 6.0:  # Increased from 5.5 to 6.0
+        # Reduced threshold to be more strict with detecting garbled content
+        if entropy > 5.5:  # Reduced from 6.0 to 5.5
             return True
 
         # Check for unusual character sequences (random distribution of special chars)
         import re
 
-        # Look for sequences like "iaIAs" or "síaà" that are unlikely in normal text
-        # Made pattern more specific to reduce false positives
-        unusual_pattern = r"([^\w\s]{4,}|([a-zA-Z][^a-zA-Z]){5,})"  # Increased sequence length requirements
+        # Made pattern more aggressive to catch more cases of garbled text
+        unusual_pattern = r"([^\w\s]{3,}|([a-zA-Z][^a-zA-Z]){4,})"  # Reduced sequence length requirements
         if re.search(unusual_pattern, text):
+            return True
+
+        # Additional check for concatenated words without spaces (common in bad PDF extraction)
+        words_without_spaces = re.findall(r"[a-zA-Z]{20,}", text)
+        if (
+            words_without_spaces
+            and len("".join(words_without_spaces)) / len(text) > 0.2
+        ):
             return True
 
         return False
@@ -424,6 +372,25 @@ class RAGSystem:
                 logger.info(
                     "PDF file detected - using PyPDFToDocument converter with cleaning"
                 )
+
+                # For PDFs, perform pre-check with PyPDF2 to assess potential issues
+                try:
+                    import PyPDF2
+
+                    with open(file_path, "rb") as f:
+                        pdf_reader = PyPDF2.PdfReader(f)
+                        num_pages = len(pdf_reader.pages)
+                        logger.info(f"PDF has {num_pages} pages")
+
+                        # Try to extract text from first page to check for encoding issues
+                        first_page_text = pdf_reader.pages[0].extract_text()
+                        if self._detect_garbled_text(first_page_text):
+                            logger.warning(
+                                "PDF first page contains potential encoding issues"
+                            )
+                except Exception as e:
+                    logger.warning(f"Could not perform PDF pre-check: {str(e)}")
+
                 pipeline.add_component("converter", pdf_converter)
                 pipeline.add_component("cleaner", cleaner)
                 pipeline.add_component("splitter", splitter)
@@ -457,6 +424,56 @@ class RAGSystem:
                     sample = result["converter"]["documents"][0].content[:500]
                     logger.info(f"Sample converted content: {sample}...")
 
+                    # Early detection for severely corrupted PDFs
+                    if (
+                        file_path_obj.suffix.lower() == ".pdf"
+                        and self._detect_garbled_text(sample)
+                    ):
+                        logger.warning(
+                            "Initial PDF conversion appears to contain garbled text"
+                        )
+
+            # Check if splitter produced documents
+            if "splitter" not in result or not result["splitter"].get("documents"):
+                if file_path_obj.suffix.lower() == ".pdf":
+                    logger.error(
+                        "Splitter did not produce any documents. Attempting fallback PDF extraction using PyPDF2."
+                    )
+                    try:
+                        import PyPDF2
+
+                        with open(file_path, "rb") as f:
+                            pdf_reader = PyPDF2.PdfReader(f)
+                            all_text = ""
+                            for page in pdf_reader.pages:
+                                page_text = page.extract_text() or ""
+                                all_text += page_text + "\n"
+                        if len(all_text.strip()) < 20:
+                            logger.error(
+                                "Fallback extraction produced insufficient text."
+                            )
+                            return []
+                        paragraphs = [
+                            p.strip() for p in all_text.split("\n\n") if p.strip()
+                        ]
+                        fallback_docs = [
+                            Document(content=para, meta={"fallback": True})
+                            for para in paragraphs
+                            if len(para) > 20
+                        ]
+                        logger.info(
+                            f"Fallback extraction produced {len(fallback_docs)} documents."
+                        )
+                        result["splitter"] = {"documents": fallback_docs}
+                    except Exception as e:
+                        logger.error("Fallback extraction failed: " + str(e))
+                        return []
+                else:
+                    logger.error(
+                        "Splitter did not produce any documents for non-PDF file."
+                    )
+                    return []
+
             documents = result["splitter"]["documents"]
 
             # Log chunk details
@@ -483,9 +500,10 @@ class RAGSystem:
                     garbled_chunks_count += 1
                     logger.warning(f"Detected likely garbled text in document chunk")
 
-                # Clean content
+                # Clean content - enhanced cleaning procedure
                 import re
 
+                # First, clean control characters
                 content = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "", content)
                 content = content.replace("\ufeff", "")  # Zero-width no-break space
 
@@ -506,6 +524,16 @@ class RAGSystem:
                 content = content.replace("Ã»", "û")
                 content = content.replace("Ã§", "ç")
 
+                # Additional common replacements for PDF encoding issues
+                content = content.replace("ï¬", "fi")  # fi ligature
+                content = content.replace("ï¬€", "ff")  # ff ligature
+                content = content.replace("ï¬‚", "fl")  # fl ligature
+                content = content.replace("Ì¶", "")  # Combining macron below
+                content = content.replace("Ì©", "")  # Combining vertical line below
+
+                # More aggressive cleaning for concatenated words - add spaces between lowercase-uppercase transitions
+                content = re.sub(r"([a-z])([A-Z])", r"\1 \2", content)
+
                 # Replace consecutive whitespace with single space
                 content = re.sub(r"\s+", " ", content)
 
@@ -519,6 +547,10 @@ class RAGSystem:
                     # Try more aggressive cleaning for heavily corrupted text
                     # Only keep ASCII characters, digits, and basic punctuation
                     content = re.sub(r"[^\x20-\x7E]", "", content)
+
+                    # Try to fix common patterns in garbled PDF text
+                    # Break concatenated words (common in poorly encoded PDFs)
+                    content = re.sub(r"([a-z]{2,})([A-Z])", r"\1 \2", content)
 
                     # Check again after aggressive cleaning
                     if self._detect_garbled_text(content) or len(content.strip()) < 20:
@@ -542,6 +574,58 @@ class RAGSystem:
             logger.info(
                 f"Skipped {len(documents) - len(cleaned_documents)} chunks due to unrecoverable garbled text"
             )
+
+            # Check if we have at least some usable documents
+            if not cleaned_documents:
+                if file_path_obj.suffix.lower() == ".pdf":
+                    logger.warning(
+                        "Cleaning removed all document content. Attempting fallback extraction using PyPDF2 for the PDF."
+                    )
+                    try:
+                        import PyPDF2
+
+                        with open(file_path, "rb") as f:
+                            pdf_reader = PyPDF2.PdfReader(f)
+                            all_text = ""
+                            for page in pdf_reader.pages:
+                                page_text = page.extract_text() or ""
+                                all_text += page_text + "\n"
+                        if len(all_text.strip()) < 20:
+                            logger.error(
+                                "Fallback extraction produced insufficient text."
+                            )
+                            return []
+                        paragraphs = [
+                            p.strip() for p in all_text.split("\n\n") if p.strip()
+                        ]
+                        fallback_docs = [
+                            Document(content=para, meta={"fallback": True})
+                            for para in paragraphs
+                            if len(para) > 20
+                        ]
+                        if not fallback_docs:
+                            logger.error("Fallback extraction produced no documents.")
+                            return []
+                        cleaned_documents = fallback_docs
+                        logger.info(
+                            f"Fallback extraction after cleaning produced {len(cleaned_documents)} documents."
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Fallback extraction after cleaning failed: " + str(e)
+                        )
+                        return []
+                else:
+                    logger.error(
+                        "No usable documents could be extracted from the file after cleaning"
+                    )
+                    return []
+
+            # If more than 80% of chunks were garbled, warn about potential issues
+            if garbled_chunks_count / len(documents) > 0.8:
+                logger.warning(
+                    f"More than 80% of document chunks contained garbled text. Results may be unreliable."
+                )
 
             # Replace original documents with cleaned ones
             documents = cleaned_documents
@@ -580,6 +664,26 @@ class RAGSystem:
             if session_id not in self.session_files:
                 self.session_files[session_id] = set()
 
+            # For PDFs, perform a pre-check to verify readability
+            file_path_obj = Path(file_path)
+            if file_path_obj.suffix.lower() == ".pdf":
+                try:
+                    import PyPDF2
+
+                    with open(file_path, "rb") as f:
+                        pdf_reader = PyPDF2.PdfReader(f)
+                        num_pages = len(pdf_reader.pages)
+                        logger.info(f"PDF pre-check: {file_path} has {num_pages} pages")
+
+                        # Attempt to extract text from the first page
+                        first_page_text = pdf_reader.pages[0].extract_text()
+                        if not first_page_text or len(first_page_text.strip()) < 10:
+                            logger.warning(
+                                f"PDF pre-check: {file_path} contains very little text in first page"
+                            )
+                except Exception as e:
+                    logger.warning(f"PDF pre-check failed for {file_path}: {str(e)}")
+
             # Process file
             documents = self.process_file(file_path)
             if not documents:
@@ -588,6 +692,24 @@ class RAGSystem:
 
             logger.info(f"Created {len(documents)} documents from file")
             logger.info(f"Sample document content: {documents[0].content[:200]}")
+
+            # Double-check document quality
+            valid_docs = 0
+            for doc in documents:
+                if (
+                    doc.content
+                    and len(doc.content.strip()) > 20
+                    and not self._detect_garbled_text(doc.content)
+                ):
+                    valid_docs += 1
+
+            if valid_docs < len(documents) * 0.3:  # Less than 30% valid
+                logger.warning(
+                    f"Only {valid_docs} out of {len(documents)} documents appear to be valid quality"
+                )
+                if valid_docs == 0:
+                    logger.error("No valid documents found, aborting indexing")
+                    return False
 
             # Add session ID to document metadata
             for doc in documents:
@@ -598,8 +720,8 @@ class RAGSystem:
             # Log document details before embedding
             logger.info("Document details before embedding:")
             for i, doc in enumerate(documents[:3]):
-                logger.info(f"Document {i} content preview: {doc.content[:200]}...")
-                logger.info(f"Document {i} metadata: {doc.meta}")
+                logger.info(f"Document {i+1} content preview: {doc.content[:200]}...")
+                logger.info(f"Document {i+1} metadata: {doc.meta}")
 
             # Embed documents
             logger.info("Starting document embedding...")
@@ -645,8 +767,22 @@ class RAGSystem:
             self.indexed_files.add(file_path)
             self.session_files[session_id].add(file_path)
 
+            # Verify indexed documents for this session and file
+            session_file_docs = 0
+            for doc in self.document_store.filter_documents():
+                if doc.meta.get("session_id") == session_id and str(
+                    doc.meta.get("file_path")
+                ) == str(file_path):
+                    session_file_docs += 1
+
+            if session_file_docs == 0:
+                logger.error(
+                    f"Verification failed: No documents found for {file_path} in session {session_id}"
+                )
+                return False
+
             logger.info(
-                f"Successfully indexed file: {file_path} for session: {session_id}"
+                f"Successfully indexed file: {file_path} for session: {session_id} with {session_file_docs} documents"
             )
             return True
 
@@ -952,6 +1088,73 @@ class RAGSystem:
                 f"Generating response for query: '{query}' in session {session_id}"
             )
 
+            # Check if query is asking for specific data that needs documents
+            import re
+
+            specific_data_patterns = [
+                # General statistics and data patterns
+                r"percentage",
+                r"percent",
+                r"how many",
+                r"what percent",
+                r"stats",
+                r"statistics",
+                r"survey",
+                r"report",
+                r"data",
+                r"what number",
+                r"how much",
+                r"\d{4} survey",
+                r"spring \d{4}",
+                r"annual report",
+                r"\d{4}-\d{4}",
+                r"\d{4} report",
+                # Patterns for specific numerical queries
+                r"how many people",
+                r"how many participants",
+                r"how many respondents",
+                r"what percentage of",
+                r"what fraction of",
+                r"how much funding",
+                # Budget and financial patterns
+                r"budget",
+                r"funding",
+                r"financial",
+                r"cost",
+                r"expense",
+                # Time-specific patterns
+                r"in \d{4}",
+                r"during \d{4}",
+                r"last year",
+                r"this year",
+                r"next year",
+                # Comparison patterns
+                r"compared to",
+                r"versus",
+                r"vs",
+                r"difference between",
+                r"changes? from",
+                # Opinion/survey patterns
+                r"opinion",
+                r"feedback",
+                r"responded",
+                r"respondents",
+                r"surveyed",
+                r"participants said",
+                r"residents indicated",
+            ]
+
+            is_specific_data_query = any(
+                re.search(pattern, query.lower()) for pattern in specific_data_patterns
+            )
+
+            # Check if there are any documents in the session
+            session_has_docs = False
+            for doc in self.document_store.filter_documents():
+                if doc.meta.get("session_id") == session_id:
+                    session_has_docs = True
+                    break
+
             # Retrieve context if not provided
             if context_docs is None:
                 context_docs = self.retrieve_context(query, session_id=session_id)
@@ -992,6 +1195,28 @@ class RAGSystem:
                 else:
                     valid_context = True
 
+            # Special case: specific data query with files but no relevant context
+            if (
+                is_specific_data_query
+                and session_has_docs
+                and (not context_docs or not valid_context)
+            ):
+                logger.warning(
+                    "Specific data query with documents available but no relevant context found"
+                )
+                answer = "I couldn't find the specific information you're asking about in the uploaded documents. The data about percentages, survey results, or statistics you're looking for might not be present in these documents, or may be in a different format. You may want to try a different query or upload additional relevant documents."
+
+                return {
+                    "query": query,
+                    "answer": answer,
+                    "context": [
+                        {
+                            "source": "No relevant data found",
+                            "content": "The specific data requested was not found in the uploaded documents.",
+                        }
+                    ],
+                }
+
             if not context_docs or not valid_context:
                 logger.warning("No valid context documents retrieved")
                 # Generate a response with special notice about document issues
@@ -1014,6 +1239,13 @@ class RAGSystem:
 
             # Create context string from documents
             context_str = self._format_context_for_prompt(context_docs)
+
+            # If the context string indicates no readable content, fall back to model knowledge
+            if context_str.startswith("No readable content could be extracted"):
+                logger.warning(
+                    "Context formatting indicates no usable content, falling back to model knowledge"
+                )
+                return self.generate_from_knowledge(query, document_issue_notice=True)
 
             # Log the context string length
             logger.info(f"Context string length: {len(context_str)} chars")
@@ -1068,6 +1300,49 @@ class RAGSystem:
             # Extract just the assistant's response based on model type
             answer = self._extract_answer_from_output(full_output, prompt)
 
+            # Check for garbled output in the answer
+            if self._detect_garbled_text(answer):
+                logger.error(
+                    "Generated answer appears to be garbled, falling back to model knowledge"
+                )
+                return self.generate_from_knowledge(query, document_issue_notice=True)
+
+            # If answer is too short (likely failed generation), fall back to model knowledge
+            if len(answer.strip()) < 30:
+                logger.warning(
+                    f"Answer too short ({len(answer.strip())} chars), falling back to model knowledge"
+                )
+                return self.generate_from_knowledge(query)
+
+            # For specific data queries, check if the answer contains actual data/numbers
+            if is_specific_data_query:
+                # Check for presence of numbers or percentages in the response
+                contains_numbers = bool(re.search(r"\d+", answer))
+                contains_percentage = bool(re.search(r"\d+%|\d+ percent", answer))
+
+                if not (contains_numbers or contains_percentage):
+                    # The model didn't find specific data in the context
+                    logger.warning(
+                        "Specific data query with context, but answer doesn't contain numbers/percentages"
+                    )
+
+                    # If answer already indicates data not found, keep it, otherwise replace with clearer message
+                    data_not_found_patterns = [
+                        r"couldn't find",
+                        r"not (able to )?(find|locate)",
+                        r"no (specific )?information",
+                        r"don't have",
+                        r"data (is )?not",
+                        r"not (available|present|included)",
+                        r"unable to",
+                        r"information (is )?not",
+                    ]
+                    if not any(
+                        re.search(pattern, answer.lower())
+                        for pattern in data_not_found_patterns
+                    ):
+                        answer = "I've searched the uploaded documents but couldn't find the specific statistical information you're asking about. The percentage or numbers you're looking for might not be present in these documents, or may be in a format I couldn't extract properly."
+
             # DEBUG: Log the extracted answer
             logger.info("================ EXTRACTED ANSWER ================")
             logger.info(f"Extracted answer length: {len(answer)} chars")
@@ -1093,14 +1368,20 @@ class RAGSystem:
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "query": query,
-                "answer": "Sorry, I encountered an error while processing your request.",
-                "context": [],
+                "answer": "I'm sorry, I encountered an error while processing your request. Please try again or rephrase your question.",
+                "context": [
+                    {
+                        "source": "Error (no documents available)",
+                        "content": "An error occurred while processing your request.",
+                    }
+                ],
             }
 
     def _format_context_for_prompt(self, context_docs: List[Document]) -> str:
         """Format the context documents into a string for the prompt."""
         context_str = ""
         garbled_docs_count = 0
+        usable_docs_count = 0
 
         for i, doc in enumerate(context_docs):
             # Include document number and file source in the context
@@ -1123,6 +1404,8 @@ class RAGSystem:
                 content = re.sub(r"[^\x20-\x7E]", " ", content)
                 # Remove excessive punctuation that might be encoding artifacts
                 content = re.sub(r"[^\w\s\.,;:!?()-]{2,}", " ", content)
+                # Add spaces between lowercase and uppercase letters to fix concatenated words
+                content = re.sub(r"([a-z])([A-Z])", r"\1 \2", content)
                 # Normalize whitespace
                 content = re.sub(r"\s+", " ", content).strip()
 
@@ -1133,7 +1416,16 @@ class RAGSystem:
                     )
                     continue
 
+                # Check if content is still garbled after cleaning
+                if self._detect_garbled_text(content):
+                    logger.warning(
+                        f"Document {i+1} is still garbled after cleaning, skipping"
+                    )
+                    continue
+
+            # Add the document to the context string
             context_str += f"Document {i+1} (from {file_name}):\n{content}\n\n"
+            usable_docs_count += 1
 
         # Log statistics about garbled documents
         if garbled_docs_count > 0:
@@ -1143,7 +1435,11 @@ class RAGSystem:
 
         # If all documents were garbled/skipped, provide a notice
         if not context_str.strip():
-            context_str = "No readable content could be extracted from the documents due to possible encoding or formatting issues."
+            return "No readable content could be extracted from the documents due to possible encoding or formatting issues."
+
+        # If very few usable documents from a larger set, add a note
+        if usable_docs_count < len(context_docs) * 0.3 and len(context_docs) > 3:
+            context_str += "\nNote: Many documents were excluded due to formatting or encoding issues. Results may be limited.\n\n"
 
         # Trim if too long
         if len(context_str) > 6000:
@@ -1155,61 +1451,22 @@ class RAGSystem:
         return context_str
 
     def _create_prompt_with_context(self, query: str, context_str: str) -> str:
-        """Create a prompt with the context for the given model type."""
-        # Check if we're using TinyLlama model
-        if "TinyLlama" in self.tokenizer.name_or_path:
-            logger.info("Using TinyLlama prompt format")
-            # Format prompt for TinyLlama with instructions to summarize
-            prompt = f"""<s>[INST] <<SYS>>
+        """Create a prompt with context for the language model based on model type."""
+        # Format prompt for TinyLlama with instructions to summarize
+        prompt = f"""<s>[INST] <<SYS>>
 You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals. 
-Answer questions using the provided context information, but DO NOT copy the information verbatim. 
-Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
-Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
-
-For safety-critical procedures like SCBA (Self-Contained Breathing Apparatus) use, fire response, or medical interventions:
-- Provide precise, clear step-by-step instructions in the correct sequence
-- Emphasize safety protocols and critical warnings
-- Include all necessary steps without omitting important details
-
-Use your own words to explain concepts clearly while maintaining factual accuracy.
-Cite the source document numbers when possible (e.g., "According to Document 1...").
-
-When appropriate, use formatting to enhance readability:
-- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
-- Use simple tables for comparing multiple items with similar properties
-- Use headers to separate major sections if the response is lengthy
+Answer the question based ONLY on the provided context.
+Organize your response in a clear, logical way using markdown formatting as needed (bullet points, headings, etc.).
+If the information in the context is insufficient to answer the question completely, state specifically what information is missing.
+Do not make up information that is not provided in the context.
 <</SYS>>
 
-I need information about the following topic: {query}
+Answer the following question using only the information provided in the context below:
 
-Here's the relevant information from my knowledge base:
-{context_str} [/INST]"""
-        else:
-            logger.info("Using Phi-3 prompt format")
-            prompt = f"""<|system|>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
-Answer questions using the provided context information, but DO NOT copy the information verbatim.
-Instead, synthesize and summarize the key points into a well-organized response that addresses the query.
-Focus on delivering complete, accurate responses that address the core purpose and function of the equipment or procedures being discussed.
+Question: {query}
 
-For safety-critical procedures like SCBA (Self-Contained Breathing Apparatus) use, fire response, or medical interventions:
-- Provide precise, clear step-by-step instructions in the correct sequence
-- Emphasize safety protocols and critical warnings
-- Include all necessary steps without omitting important details
-
-Use your own words to explain concepts clearly while maintaining factual accuracy.
-Cite the source document numbers when possible (e.g., "According to Document 1...").
-
-When appropriate, use formatting to enhance readability:
-- Use bullet points or numbered lists for sequential steps, multiple items, or procedures
-- Use simple tables for comparing multiple items with similar properties
-- Use headers to separate major sections if the response is lengthy
-<|user|>
-I need information about the following topic: {query}
-
-Here's the relevant information from my knowledge base:
-{context_str}
-<|assistant|>"""
+Context: {context_str}
+[/INST]"""
 
         return prompt
 
@@ -1218,81 +1475,46 @@ Here's the relevant information from my knowledge base:
         if len(prompt) <= max_length:
             return prompt
 
-        # For TinyLlama
-        if "TinyLlama" in self.tokenizer.name_or_path:
-            # Split into parts: system, query, context, and end tag
-            parts = prompt.split(
-                "Here's the relevant information from my knowledge base:"
+        # For TinyLlama format
+        # Split into parts: system, query, context, and end tag
+        parts = prompt.split("Here's the relevant information from my knowledge base:")
+        if len(parts) == 2:
+            prefix = (
+                parts[0] + "Here's the relevant information from my knowledge base:"
             )
-            if len(parts) == 2:
-                prefix = (
-                    parts[0] + "Here's the relevant information from my knowledge base:"
-                )
-                context_and_end = parts[1]
+            context_and_end = parts[1]
 
-                # Split context and end tag
-                if "[/INST]" in context_and_end:
-                    context, end = context_and_end.split("[/INST]", 1)
-                    # Calculate how much we need to truncate
-                    available_space = max_length - len(prefix) - len(end) - 3  # Buffer
-                    if available_space > 100:  # Ensure we have reasonable space
-                        truncated_context = context[:available_space] + "..."
-                        return prefix + truncated_context + "[/INST]"
-
-        # For Phi-3
-        else:
-            # Split into system and user parts
-            if "<|user|>" in prompt and "<|assistant|>" in prompt:
-                system_part = prompt.split("<|user|>")[0]
-                user_part = (
-                    "<|user|>" + prompt.split("<|user|>")[1].split("<|assistant|>")[0]
-                )
-                assistant_part = "<|assistant|>"
-
-                # Calculate available space
-                available_space = (
-                    max_length - len(system_part) - len(assistant_part) - 3
-                )
-                if available_space > 100:
-                    # Find where the context starts
-                    if (
-                        "Here's the relevant information from my knowledge base:"
-                        in user_part
-                    ):
-                        prefix, context = user_part.split(
-                            "Here's the relevant information from my knowledge base:", 1
-                        )
-                        prefix += (
-                            "Here's the relevant information from my knowledge base:"
-                        )
-                        # Truncate context
-                        available_space = (
-                            max_length
-                            - len(system_part)
-                            - len(prefix)
-                            - len(assistant_part)
-                            - 3
-                        )
-                        truncated_context = context[:available_space] + "..."
-                        return system_part + prefix + truncated_context + assistant_part
+            # Split context and end tag
+            if "[/INST]" in context_and_end:
+                context, end = context_and_end.split("[/INST]", 1)
+                # Calculate how much we need to truncate
+                available_space = max_length - len(prefix) - len(end) - 3  # Buffer
+                if available_space > 100:  # Ensure we have reasonable space
+                    truncated_context = context[:available_space] + "..."
+                    return prefix + truncated_context + "[/INST]"
 
         # Default fallback: simple truncation
         return prompt[: max_length - 3] + "..."
 
     def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
         """Extract the model's answer from the full output."""
-        # For TinyLlama
-        if "TinyLlama" in self.tokenizer.name_or_path:
-            # For TinyLlama, the answer is everything after the prompt
-            answer = full_output[len(prompt.replace("[/INST]", "")) :]
-            # Clean up any potential context prefixes
-            answer = answer.replace("Answer Context:", "").strip()
+        # For TinyLlama, the answer is everything after the prompt
+        answer = full_output[len(prompt.replace("[/INST]", "")) :]
+        # Clean up any potential context prefixes
+        answer = answer.replace("Answer Context:", "").strip()
+
+        # Preserve commonly used markdown formatting that might be getting stripped
+        # Ensure lists are preserved (- and * for bullet points, 1. for numbered lists)
+        # Ensure headers are preserved (# for h1, ## for h2, etc.)
+        # Ensure code blocks are preserved (```code```)
+        # Ensure tables are preserved (| for table cells)
+        logger.info(f"Extracted markdown answer length: {len(answer)} chars")
+
+        # For debug purposes, log a sample of the markdown answer
+        if len(answer) > 200:
+            logger.info(f"Markdown sample: {answer[:200]}...")
         else:
-            # For Phi-3, extract after the last <|assistant|> token
-            response_parts = full_output.split("<|assistant|>")
-            answer = response_parts[-1].strip()
-            # Clean up any context prefixes
-            answer = answer.replace("Answer Context:", "").strip()
+            logger.info(f"Markdown sample: {answer}")
 
         return answer
 
@@ -1366,7 +1588,26 @@ Here's the relevant information from my knowledge base:
         logger.info(f"Saved uploaded file to {file_path} for session {session_id}")
 
         # Index the file for this session
-        self.index_file(str(file_path), session_id=session_id)
+        success = self.index_file(str(file_path), session_id=session_id)
+        if not success:
+            logger.warning(f"Failed to index file {file_path} for session {session_id}")
+
+        # Verify that documents were added for this file
+        doc_count = 0
+        for doc in self.document_store.filter_documents():
+            if session_id == doc.meta.get("session_id") and str(
+                file_path
+            ) == doc.meta.get("file_path"):
+                doc_count += 1
+
+        logger.info(
+            f"Indexed {doc_count} documents from {file_path} for session {session_id}"
+        )
+
+        if doc_count == 0:
+            logger.warning(
+                f"No documents were indexed from {file_path} - possible file processing issue"
+            )
 
         return str(file_path)
 
@@ -1393,35 +1634,88 @@ Here's the relevant information from my knowledge base:
         try:
             logger.info("Generating response from model knowledge without context")
 
+            # Check if query is asking for specific data or statistics that would require documents
+            import re
+
+            specific_data_patterns = [
+                # General statistics and data patterns
+                r"percentage",
+                r"percent",
+                r"how many",
+                r"what percent",
+                r"stats",
+                r"statistics",
+                r"survey",
+                r"report",
+                r"data",
+                r"what number",
+                r"how much",
+                r"\d{4} survey",
+                r"spring \d{4}",
+                r"annual report",
+                r"\d{4}-\d{4}",
+                r"\d{4} report",
+                # Patterns for specific numerical queries
+                r"how many people",
+                r"how many participants",
+                r"how many respondents",
+                r"what percentage of",
+                r"what fraction of",
+                r"how much funding",
+                # Budget and financial patterns
+                r"budget",
+                r"funding",
+                r"financial",
+                r"cost",
+                r"expense",
+                # Time-specific patterns
+                r"in \d{4}",
+                r"during \d{4}",
+                r"last year",
+                r"this year",
+                r"next year",
+                # Comparison patterns
+                r"compared to",
+                r"versus",
+                r"vs",
+                r"difference between",
+                r"changes? from",
+                # Opinion/survey patterns
+                r"opinion",
+                r"feedback",
+                r"responded",
+                r"respondents",
+                r"surveyed",
+                r"participants said",
+                r"residents indicated",
+            ]
+
+            is_specific_data_query = any(
+                re.search(pattern, query.lower()) for pattern in specific_data_patterns
+            )
+
+            if is_specific_data_query:
+                logger.info(
+                    "Query appears to be asking for specific data that requires documents"
+                )
+
+                # For specific data queries without documents, honestly state we don't have the information
+                answer = "I don't have access to the specific information or statistics you're asking about. To provide accurate data about surveys, reports, or specific statistics, I would need access to the relevant documents. Please upload the related documents if you'd like me to analyze that specific information."
+
+                # Create a proper context with the right source label
+                source_label = "Model knowledge only (no documents available)"
+                notice = "No relevant documents were found to answer this specific data question."
+
+                response = {
+                    "query": query,
+                    "answer": answer,
+                    "context": [{"source": source_label, "content": notice}],
+                }
+
+                return response
+
             # Create a prompt without context
-            if "TinyLlama" in self.tokenizer.name_or_path:
-                base_prompt = """<s>[INST] <<SYS>>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
-Answer questions to the best of your ability based on your training, even when specific reference documents aren't available.
-Focus on delivering complete, accurate responses that are well-organized and helpful.
-<</SYS>>
-
-"""
-                # Add notice about document issues if requested
-                if document_issue_notice:
-                    base_prompt += "Note: There were issues processing the uploaded documents. I'll answer based on my general knowledge instead.\n\n"
-
-                prompt = base_prompt + f"{query} [/INST]"
-            else:
-                base_prompt = """<|system|>
-You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
-Answer questions to the best of your ability based on your training, even when specific reference documents aren't available.
-Focus on delivering complete, accurate responses that are well-organized and helpful.
-<|user|>
-"""
-                # Add notice about document issues if requested
-                if document_issue_notice:
-                    base_prompt += "Note: There were issues processing the uploaded documents. I'll answer based on my general knowledge instead.\n\n"
-
-                prompt = base_prompt + f"{query}\n<|assistant|>"
-
-            # Log the prompt
-            logger.info(f"Knowledge-only PROMPT:\n{prompt[:500]}...")
+            prompt = self._create_knowledge_prompt(query, document_issue_notice)
 
             # Tokenize the prompt
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -1446,16 +1740,25 @@ Focus on delivering complete, accurate responses that are well-organized and hel
             # Extract just the assistant's response
             answer = self._extract_answer_from_output(full_output, prompt)
 
+            # Check if the answer itself appears garbled
+            if self._detect_garbled_text(answer):
+                logger.warning(
+                    "Generated answer appears to be garbled, returning fallback response"
+                )
+                answer = "I apologize, but I'm having trouble processing your request. Please try reformulating your question or uploading a different document format if possible."
+
             # Add a notice that this was generated without document context
             if document_issue_notice:
-                notice = "Note: This response was generated using the model's knowledge as there were issues with processing the uploaded documents."
+                source_label = "Model knowledge only (document processing issues)"
+                notice = "This response was generated using the model's knowledge as there were issues with processing the uploaded documents."
             else:
-                notice = "Note: This response was generated using the model's knowledge as no relevant documents were found."
+                source_label = "Model knowledge only (no documents available)"
+                notice = "This response was generated using the model's knowledge as no relevant documents were found."
 
             response = {
                 "query": query,
                 "answer": answer,
-                "context": [{"source": "Model Knowledge", "content": notice}],
+                "context": [{"source": source_label, "content": notice}],
             }
 
             return response
@@ -1465,6 +1768,35 @@ Focus on delivering complete, accurate responses that are well-organized and hel
             logger.exception("Full traceback:")
             return {
                 "query": query,
-                "answer": "Sorry, I encountered an error while processing your request.",
-                "context": [],
+                "answer": "I'm sorry, I encountered an error while processing your request. Please try again or rephrase your question.",
+                "context": [
+                    {
+                        "source": "Error (no documents available)",
+                        "content": "An error occurred while processing your request.",
+                    }
+                ],
             }
+
+    def _create_knowledge_prompt(
+        self, query: str, document_issue_notice: bool = False
+    ) -> str:
+        """Create a prompt for knowledge-based generation without context."""
+        # TinyLlama prompt format
+        prompt = f"""<s>[INST] <<SYS>>
+You are a first responder assistant designed to provide accurate, concise information based on official protocols and emergency response manuals.
+Answer questions to the best of your ability based on your training, even when specific reference documents aren't available.
+Focus on delivering complete, accurate responses that are well-organized and helpful.
+If you don't know the answer to a question, clearly state that you don't have enough information rather than making up an answer.
+Be especially careful not to make up statistics, numbers, or specific data that you don't have access to.
+<</SYS>>
+"""
+        # Add notice about document issues if requested
+        if document_issue_notice:
+            prompt += "Note: There were issues processing the uploaded documents. I'll answer based on my general knowledge instead. If I don't have enough information, I'll let you know.\n\n"
+
+        prompt += f"{query}\n[/INST]"
+
+        # Log the prompt
+        logger.info(f"Knowledge-only PROMPT:\n{prompt[:500]}...")
+
+        return prompt

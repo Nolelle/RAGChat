@@ -214,20 +214,45 @@ class RAGServer:
                         warnings.append(message)
 
                 # Save and index file with session ID
+                logger.info(
+                    f"Saving and indexing file: {filename} for session: {session_id}"
+                )
                 file_path = self.rag_system.save_uploaded_file(
                     file_data, filename, session_id
                 )
 
+                # Verify the file was indexed
+                doc_count = 0
+                for doc in self.rag_system.document_store.filter_documents():
+                    if session_id == doc.meta.get("session_id") and str(
+                        file_path
+                    ) == doc.meta.get("file_path"):
+                        doc_count += 1
+
+                logger.info(f"Verified {doc_count} documents indexed from {filename}")
+
+                # If no documents were indexed, add a warning
+                if doc_count == 0:
+                    warnings.append(
+                        "The file could not be properly processed for indexing. It may be corrupted, contain poor text extraction quality, or have security restrictions."
+                    )
+
                 response = {
                     "status": "success",
-                    "message": f"File '{filename}' uploaded and indexed successfully",
+                    "message": f"File '{filename}' uploaded successfully",
                     "file_path": file_path,
                     "session_id": session_id,
+                    "indexed_documents": doc_count,
                 }
 
                 # Add warnings if any were detected
                 if warnings:
                     response["warnings"] = warnings
+                    if doc_count == 0:
+                        response["message"] = (
+                            f"File '{filename}' uploaded but could not be indexed."
+                        )
+                        response["status"] = "partial_success"
 
                 return jsonify(response)
 

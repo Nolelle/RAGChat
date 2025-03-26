@@ -30,16 +30,16 @@ app = typer.Typer()
 class ChatbotCLI:
     """Command-line interface for the FirstRespondersChatbot."""
 
-    def __init__(self, model_dir: str = "phi-3-mini-first-responder"):
+    def __init__(self, model_dir: str = "tinyllama-1.1b-first-responder-fast"):
         """
-        Initialize the chatbot CLI with Phi-3.
+        Initialize the chatbot CLI with TinyLlama.
         """
         self.model_dir = Path(model_dir)
         self.model, self.tokenizer, self.device = self._load_model()
 
     def _load_model(self):
         """
-        Load the fine-tuned Phi-3 model and tokenizer.
+        Load the fine-tuned TinyLlama model and tokenizer.
         """
         # Check if model exists
         if not self.model_dir.exists():
@@ -71,7 +71,7 @@ class ChatbotCLI:
             bnb_4bit_quant_type="nf4",
         )
 
-        # Load Phi-3 model
+        # Load TinyLlama model
         console.print("Loading model from", self.model_dir)
 
         # Try loading with adapter first
@@ -80,7 +80,7 @@ class ChatbotCLI:
 
             # Load base model
             base_model = AutoModelForCausalLM.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct",
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                 quantization_config=quantization_config,
                 device_map="auto",
                 torch_dtype=torch.float16,
@@ -88,7 +88,7 @@ class ChatbotCLI:
 
             # Load tokenizer
             tokenizer = AutoTokenizer.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct"
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
             )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
@@ -108,15 +108,15 @@ class ChatbotCLI:
                 )
         except Exception as e:
             console.print(f"[bold yellow]Warning:[/bold yellow] {str(e)}")
-            console.print("Falling back to base Phi-3 model")
+            console.print("Falling back to base TinyLlama model")
             model = AutoModelForCausalLM.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct",
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                 quantization_config=quantization_config,
                 device_map="auto",
                 torch_dtype=torch.float16,
             )
             tokenizer = AutoTokenizer.from_pretrained(
-                "microsoft/Phi-3-mini-4k-instruct"
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
             )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
@@ -125,14 +125,15 @@ class ChatbotCLI:
 
     def generate_response(self, question: str) -> str:
         """
-        Generate a response using Phi-3.
+        Generate a response using TinyLlama.
         """
-        # Format question for Phi-3
-        prompt = f"""<|system|>
+        # Format question for TinyLlama
+        prompt = f"""<s>[INST] <<SYS>>
 You are a first responders chatbot designed to provide accurate information about emergency procedures, protocols, and best practices. Focus on delivering complete, accurate responses that address the core purpose and function of equipment or procedures. When discussing protective equipment, prioritize explaining its primary protective purpose before maintenance details.
-<|user|>
+<</SYS>>
+
 {question}
-<|assistant|>"""
+[/INST]"""
 
         # Tokenize and move to device
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -155,8 +156,8 @@ You are a first responders chatbot designed to provide accurate information abou
         full_response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         # Extract just the assistant's response
-        response_parts = full_response.split("<|assistant|>")
-        response = response_parts[-1].strip()
+        response = full_response[len(prompt.replace("[/INST]", "")) :]
+        response = response.strip()
 
         return response
 
