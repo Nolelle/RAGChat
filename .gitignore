@@ -36,6 +36,12 @@ data/
 phi3-medium-first-responder/
 *-first-responder/
 checkpoint-*/
+tinyllama-*/
+llama-*/
+trained-models/
+# Trained model output directories 
+output/
+model_output/
 
 # FAISS indexes and vector stores
 *.index
@@ -115,6 +121,10 @@ coverage.xml
 docs/
 docs/_build/
 site/
+# Training documentation
+training-docs/
+training_documentation/
+project-documentation/
 
 # Keep important empty directories
 !.gitkeep
@@ -167,9 +177,29 @@ model.safetensors
 # Temporary experiment files
 experiments/
 runs/
+# TensorBoard logs
+runs/
+wandb/
+tensorboard/
+tb_logs/
 
 # Virtual environment
 bin/
 include/
 lib/
 pyvenv.cfg
+
+# Dataset files
+*.jsonl
+*.csv
+pseudo_data.json
+preprocessed_data.json
+
+# Session and intermediate files
+sessions/
+session_data/
+history/
+
+# Local development
+.env.local
+.env.*.local
