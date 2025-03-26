@@ -35,9 +35,9 @@ app = typer.Typer()
 class ChatbotCLI:
     """Command-line interface for the FirstRespondersChatbot."""
 
-    def __init__(self, model_dir: str = "tinyllama-1.1b-first-responder-fast"):
+    def __init__(self, model_dir: str = "phi3-medium-first-responder"):
         """
-        Initialize the chatbot CLI with TinyLlama.
+        Initialize the chatbot CLI with Phi-3 Medium.
         """
         self.model_dir = Path(model_dir)
         try:
@@ -48,7 +48,7 @@ class ChatbotCLI:
 
     def _load_model(self):
         """
-        Load the fine-tuned TinyLlama model and tokenizer.
+        Load the fine-tuned Phi-3 Medium model and tokenizer.
 
         Returns:
             tuple: (model, tokenizer, device)
@@ -117,7 +117,7 @@ class ChatbotCLI:
     def _load_model_with_adapter(self, device, quantization_config):
         """Load model with adapter if available, or full model, or fallback to base model."""
         console.print("Loading model from", self.model_dir)
-        model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        model_path = "microsoft/phi-3-medium-4k-instruct"
 
         # Try loading with adapter first
         try:
@@ -130,6 +130,7 @@ class ChatbotCLI:
                     model_path,
                     device_map="auto",
                     torch_dtype=torch.float16,
+                    trust_remote_code=True,
                 )
             else:
                 # CUDA or CPU with quantization
@@ -138,10 +139,13 @@ class ChatbotCLI:
                     quantization_config=quantization_config,
                     device_map="auto",
                     torch_dtype=torch.float16,
+                    trust_remote_code=True,
                 )
 
             # Load tokenizer
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_path, trust_remote_code=True
+            )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
@@ -161,12 +165,13 @@ class ChatbotCLI:
                 ),
                 device_map="auto",
                 torch_dtype=torch.float16,
+                trust_remote_code=True,
             )
             return model, tokenizer
 
         except Exception as e:
             console.print(f"[bold yellow]Warning:[/bold yellow] {str(e)}")
-            console.print("Falling back to base TinyLlama model")
+            console.print("Falling back to base Phi-3 Medium model")
 
             # Load base model as fallback
             model = AutoModelForCausalLM.from_pretrained(
@@ -176,8 +181,11 @@ class ChatbotCLI:
                 ),
                 device_map="auto",
                 torch_dtype=torch.float16,
+                trust_remote_code=True,
             )
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_path, trust_remote_code=True
+            )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
@@ -185,7 +193,7 @@ class ChatbotCLI:
 
     def generate_response(self, question: str) -> str:
         """
-        Generate a response using TinyLlama.
+        Generate a response using Phi-3 Medium.
 
         Args:
             question: The question to answer
@@ -197,7 +205,7 @@ class ChatbotCLI:
             RuntimeError: If response generation fails
         """
         try:
-            # Format question for TinyLlama
+            # Format question for Phi-3
             prompt = self._create_prompt(question)
 
             # Tokenize and move to device
@@ -244,12 +252,10 @@ class ChatbotCLI:
             full_response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
             # Extract just the assistant's response
-            response = full_response[len(prompt.replace("[/INST]", "")) :]
-            response = response.strip()
+            response = self._extract_answer_from_output(full_response, prompt)
 
             # Clean up GPU memory
             if self.device.type == "cuda":
-                del outputs
                 torch.cuda.empty_cache()
 
             return response
@@ -258,99 +264,95 @@ class ChatbotCLI:
             logger.error(f"Error generating response: {str(e)}")
             raise RuntimeError(f"Failed to generate response: {str(e)}")
 
-    def _create_prompt(self, question: str) -> str:
-        """Create a properly formatted prompt for TinyLlama."""
-        return f"""<s>[INST] <<SYS>>
-You are a first responders chatbot designed to provide accurate information about emergency procedures, protocols, and best practices. Focus on delivering complete, accurate responses that address the core purpose and function of equipment or procedures. When discussing protective equipment, prioritize explaining its primary protective purpose before maintenance details.
-<</SYS>>
+    def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
+        """Extract just the assistant's response from the full output."""
+        # For Phi-3 format, extract everything after <|assistant|>
+        if "<|assistant|>" in full_output:
+            response = full_output.split("<|assistant|>")[-1].strip()
+            return response
 
-{question}
-[/INST]"""
+        # Fallback: return everything after the prompt
+        response = full_output[len(prompt) :].strip()
+        return response
+
+    def _create_prompt(self, question: str) -> str:
+        """Create a properly formatted prompt for Phi-3 Medium."""
+        # Phi-3 prompt format
+        return f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n\nGuidelines:\n1. Answer questions based on your training, being accurate and precise.\n2. Organize your responses with clear structure.\n3. Be honest about your limitations - if you're uncertain, clearly state that.\n4. Avoid making up specific statistics or data you don't have access to.\n5. Focus on providing practical, actionable information when possible.\n6. Explain concepts thoroughly but concisely.\n7. Use professional terminology appropriate for first responder contexts.\n8. Prioritize safety information in your responses.\n<|user|>\n{question}\n<|assistant|>"
 
     def chat(self):
-        """
-        Start an interactive chat session with the first responders chatbot.
-
-        This mode allows you to ask multiple questions in sequence, similar to
-        having a conversation with the chatbot.
-        """
+        """Run an interactive chat session."""
         console.print(
-            Panel.fit(
-                "[bold blue]First Responders Chatbot[/bold blue]\n"
-                "Type your questions about first aid, emergency procedures, or disaster response.\n"
-                "Type 'exit', 'quit', or 'q' to end the session."
+            Panel(
+                "[bold blue]First Responders Chatbot[/bold blue]\n\n"
+                "Type your questions about emergency procedures and protocols. Type 'exit' to quit.",
+                expand=False,
             )
         )
 
-        # Interactive loop
         while True:
-            # Get user input
+            # Get user question
             question = console.input("\n[bold green]You:[/bold green] ")
-            question = question.strip()
-
-            # Check if user wants to exit
-            if question.lower() in ["exit", "quit", "q", ""]:
+            if question.lower() in ["exit", "quit", "bye", "goodbye"]:
                 console.print("\n[bold blue]Goodbye![/bold blue]")
                 break
 
+            # Show spinner while generating
+            with Progress() as progress:
+                task = progress.add_task("[green]Generating response...", total=None)
+                try:
+                    answer = self.generate_response(question)
+                except Exception as e:
+                    console.print(f"[bold red]Error:[/bold red] {str(e)}")
+                    continue
+
+            # Print the answer with markdown formatting
+            console.print("\n[bold blue]Assistant:[/bold blue]")
             try:
-                # Show thinking indicator
-                with console.status(
-                    "[bold yellow]Generating response...[/bold yellow]"
-                ):
-                    response = self.generate_response(question)
-
-                # Display response as markdown for better formatting
-                console.print("\n[bold blue]Bot:[/bold blue]")
-                console.print(Markdown(response))
-
-            except Exception as e:
-                console.print(f"[bold red]Error:[/bold red] {str(e)}")
-                console.print(
-                    "[yellow]Please try a different question or restart the application.[/yellow]"
-                )
+                console.print(Markdown(answer))
+            except Exception:
+                # Fallback to plain text if markdown parsing fails
+                console.print(answer)
 
     def query(self, question: str):
-        """
-        Ask a single question and get a response (non-interactive mode).
+        """Ask a single question and get the response."""
+        console.print(f"\n[bold green]Question:[/bold green] {question}")
 
-        This mode is useful for scripting or when you just need a quick answer
-        without starting an interactive session.
+        # Show spinner while generating
+        with console.status("[green]Generating response..."):
+            try:
+                answer = self.generate_response(question)
+            except Exception as e:
+                console.print(f"[bold red]Error:[/bold red] {str(e)}")
+                return
 
-        Args:
-            question: The question to ask the chatbot
-        """
+        # Print the answer with markdown formatting
+        console.print("\n[bold blue]Answer:[/bold blue]")
         try:
-            # Show thinking indicator
-            with console.status("[bold yellow]Generating response...[/bold yellow]"):
-                response = self.generate_response(question)
-
-            # Display response
-            console.print(Markdown(response))
-
-        except Exception as e:
-            console.print(f"[bold red]Error:[/bold red] {str(e)}")
-            sys.exit(1)
+            console.print(Markdown(answer))
+        except Exception:
+            # Fallback to plain text if markdown parsing fails
+            console.print(answer)
 
 
 def get_cli():
-    """Get the Typer CLI app with commands registered."""
-    cli = ChatbotCLI()
-
-    @app.command()
-    def chat():
-        """
-        Start an interactive chat session with the first responders chatbot.
-        """
-        cli.chat()
-
-    @app.command()
-    def query(
-        question: str = typer.Argument(..., help="The question to ask the model")
-    ):
-        """
-        Ask a single question and get a response (non-interactive mode).
-        """
-        cli.query(question)
-
+    """Get the Typer CLI app."""
     return app
+
+
+@app.command()
+def chat():
+    """Start an interactive chat session with the first responder chatbot."""
+    cli = ChatbotCLI()
+    cli.chat()
+
+
+@app.command()
+def query(question: str = typer.Argument(..., help="The question to ask the model")):
+    """Ask a single question to the chatbot."""
+    cli = ChatbotCLI()
+    cli.query(question)
+
+
+if __name__ == "__main__":
+    app()

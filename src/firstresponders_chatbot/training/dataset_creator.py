@@ -1,8 +1,8 @@
 """
-Dataset creation module for the FirstRespondersChatbot project.
+Dataset creator module for the FirstRespondersChatbot.
 
-This module provides functionality to generate a pseudo-supervised dataset
-for fine-tuning the TinyLlama model.
+This module contains the DatasetCreator class for generating a dataset
+for fine-tuning the Llama 2 model.
 """
 
 import json
@@ -32,9 +32,9 @@ class DatasetCreator:
         val_ratio: float = 0.1,
         test_ratio: float = 0.1,
         min_content_length: int = 100,  # Minimum content length to consider
-        similarity_threshold: float = 0.8,  # Threshold for duplicate detection
-        max_examples_per_doc: int = 3,  # Maximum examples to generate from a document
-        model_format: str = "tinyllama",  # Options: "tinyllama" or "llama"
+        similarity_threshold: float = 0.65,  # Optimized for Llama 2
+        max_examples_per_doc: int = 5,  # Generate more examples per document
+        model_format: str = "llama2",  # Format to use
     ):
         """
         Initialize the dataset creator.
@@ -48,7 +48,7 @@ class DatasetCreator:
             min_content_length: Minimum content length to consider for a document
             similarity_threshold: Threshold for detecting similar documents
             max_examples_per_doc: Maximum examples to generate from a document
-            model_format: Format to use for the dataset (tinyllama or llama)
+            model_format: Format to use for the dataset (llama2)
         """
         self.input_file = Path(input_file)
         self.output_file = Path(output_file)
@@ -67,6 +67,79 @@ class DatasetCreator:
         except LookupError:
             nltk.download("punkt")
             nltk.download("stopwords")
+
+        # First responder domain-specific categories for better organization
+        self.domain_categories = {
+            "emergency_medical": [
+                "CPR",
+                "AED",
+                "first aid",
+                "paramedic",
+                "EMT",
+                "trauma",
+                "medical emergency",
+                "triage",
+                "patient assessment",
+                "vital signs",
+            ],
+            "fire_safety": [
+                "firefighter",
+                "fire safety",
+                "fire prevention",
+                "SCBA",
+                "fire suppression",
+                "fire hazard",
+                "building evacuation",
+                "firefighting",
+            ],
+            "incident_command": [
+                "incident command",
+                "ICS",
+                "emergency management",
+                "command structure",
+                "emergency operations",
+                "EOC",
+                "incident commander",
+            ],
+            "hazardous_materials": [
+                "hazmat",
+                "hazardous materials",
+                "chemical exposure",
+                "decontamination",
+                "biological hazard",
+                "radiological hazard",
+                "hazard assessment",
+            ],
+            "equipment_ppe": [
+                "PPE",
+                "protective equipment",
+                "respirator",
+                "safety gear",
+                "helmet",
+                "bunker gear",
+                "turnout gear",
+                "safety equipment",
+            ],
+            "disaster_response": [
+                "natural disaster",
+                "disaster response",
+                "mass casualty",
+                "evacuation",
+                "search and rescue",
+                "emergency shelter",
+                "disaster recovery",
+            ],
+            "protocols_procedures": [
+                "protocol",
+                "procedure",
+                "standard operating procedure",
+                "SOP",
+                "emergency procedure",
+                "guideline",
+                "policy",
+                "safety procedure",
+            ],
+        }
 
         # Ensure ratios sum to 1
         total_ratio = train_ratio + val_ratio + test_ratio
@@ -228,7 +301,7 @@ class DatasetCreator:
         # Filter and clean documents
         filtered_documents = self._filter_documents(documents)
 
-        # Question templates by type
+        # Question templates enhanced for first responder domain knowledge
         question_templates = {
             "factual": [
                 "What information can you provide about {}?",
@@ -236,13 +309,17 @@ class DatasetCreator:
                 "What does the manual say about {}?",
                 "What is the primary purpose of {}?",
                 "What is the core function of {} in emergency response?",
+                "What are the critical components of {}?",
+                "How is {} defined in first responder contexts?",
             ],
             "procedural": [
                 "What procedures are involved with {}?",
                 "How should first responders handle situations involving {}?",
                 "What are the steps for {}?",
                 "What is the proper protocol for {}?",
-                "How do you ensure {} is properly maintained while keeping it ready for its primary protective purpose?",
+                "What is the standard operating procedure for managing {}?",
+                "How do first responders safely approach a situation with {}?",
+                "What sequence of actions should be taken for {}?",
             ],
             "explanatory": [
                 "Can you explain the concept of {} in simple terms?",
@@ -250,27 +327,70 @@ class DatasetCreator:
                 "Explain {} as if I'm a trainee first responder.",
                 "What specific hazards does {} protect against?",
                 "How does {} minimize risk of injury or fatality?",
+                "What makes {} important in emergency situations?",
+                "Why do first responders need to understand {}?",
             ],
             "application": [
                 "How is {} applied in emergency situations?",
                 "What are the best practices for {} in emergency situations?",
                 "As a first responder, what should I know about {}?",
+                "How would I implement {} during an incident?",
+                "When would I use {} in the field?",
+                "What considerations are important when using {} in an emergency?",
+                "How do I properly maintain and use {}?",
+            ],
+            "scenario_based": [
+                "In a mass casualty incident, how would {} be utilized?",
+                "During a structural fire, how should {} be approached?",
+                "In a hazardous materials incident, what role does {} play?",
+                "During patient extrication, how is {} implemented?",
+                "In a multi-agency response, how is {} coordinated?",
+                "During search and rescue operations, how is {} used effectively?",
+            ],
+            "safety_focused": [
+                "What safety precautions should be taken when using {}?",
+                "How does {} help prevent injuries to first responders?",
+                "What are the safety limitations of {}?",
+                "What risks are associated with improper use of {}?",
+                "How can first responders safely implement {}?",
             ],
         }
 
-        # Better contextual instruction prompts that match inference
+        # Optimized instruction templates for Llama 2
         instruction_templates = [
-            "Answer the question based on the following context. You are a first responders chatbot designed to help with training and education.",
-            "You are a first responder education assistant. Answer the question based ONLY on the provided context.",
-            "As a first responder training assistant, use the provided context to answer the question.",
-            "Based on the context provided, answer this first responder training question.",
+            "You are a first responders chatbot. Answer the following question based on the provided context.",
+            "As a first responder training assistant, use only the context below to answer the question accurately.",
+            "You are a specialized AI assistant for first responders. Answer this question using only the information in the following context.",
+            "Based solely on the provided documents, answer this question about first responder procedures.",
+            "You are an emergency services training assistant. Using only the following reference materials, answer this question.",
         ]
 
+        # Categorize documents by domain for better context grouping
+        categorized_docs = self._categorize_documents(filtered_documents)
+
         # Group similar documents to create synthetic context
-        logger.info("Starting to group similar documents")
-        grouped_docs = self._group_similar_documents(filtered_documents)
+        logger.info("Grouping similar documents by category for better context")
+        grouped_docs = []
+
+        # Create groups within each category
+        for category, docs in categorized_docs.items():
+            category_groups = self._group_similar_documents(
+                docs, group_size=3, num_groups=100
+            )
+            grouped_docs.extend(category_groups)
+            logger.info(
+                f"Created {len(category_groups)} document groups for category: {category}"
+            )
+
+        # Add remaining document groups using standard grouping
+        if len(grouped_docs) < 500:
+            additional_groups = self._group_similar_documents(
+                filtered_documents, group_size=3, num_groups=500 - len(grouped_docs)
+            )
+            grouped_docs.extend(additional_groups)
+
         logger.info(
-            f"Created {len(grouped_docs)} document groups for context generation"
+            f"Created {len(grouped_docs)} total document groups for context generation"
         )
 
         # Track generated topics to avoid duplicates
@@ -300,8 +420,31 @@ class DatasetCreator:
             ):
                 continue
 
-            # Extract potential topics from keywords
-            keywords = self._extract_keywords(primary_content, top_n=5)
+            # Get file name for domain-specific question generation
+            file_name = (
+                doc_group[0]["meta"].get("file_name", "").lower()
+                if "meta" in doc_group[0]
+                else ""
+            )
+
+            # Extract potential topics from keywords with domain focus
+            keywords = self._extract_keywords(
+                primary_content, top_n=7
+            )  # Increased from 5 to 7
+
+            # Add document title-based keywords if available
+            if file_name:
+                # Extract key terms from filename
+                file_terms = re.findall(r"[a-zA-Z]{3,}", file_name)
+                for term in file_terms:
+                    if term.lower() not in ["pdf", "doc", "txt", "the", "and", "for"]:
+                        keywords.append(term)
+
+            # Use domain categories to identify relevant domain terms in content
+            for category, terms in self.domain_categories.items():
+                for term in terms:
+                    if term.lower() in primary_content.lower() and term not in keywords:
+                        keywords.append(term)
 
             # Generate examples based on each keyword topic
             for keyword in keywords:
@@ -313,7 +456,8 @@ class DatasetCreator:
 
                 # Create context similar to inference time
                 context_text = ""
-                for i, doc in enumerate(doc_group[:3]):  # Use up to 3 docs per question
+                # Use all docs in the group for richer context
+                for i, doc in enumerate(doc_group):
                     meta_info = ""
                     if "meta" in doc and doc["meta"]:
                         if "file_name" in doc["meta"]:
@@ -325,11 +469,22 @@ class DatasetCreator:
                         f"\n### Document {i+1}{meta_info}:\n{doc['content']}\n"
                     )
 
-                # Choose question types based on content
-                q_types = list(question_templates.keys())
+                # Identify relevant question types based on keyword and content
+                relevant_q_types = self._identify_relevant_question_types(
+                    keyword, primary_content
+                )
+
+                # If no specific types identified, use all types
+                if not relevant_q_types:
+                    relevant_q_types = list(question_templates.keys())
+
+                # Generate more questions for important keywords
+                num_questions = (
+                    min(3, len(relevant_q_types)) if len(primary_content) > 500 else 1
+                )
 
                 # Generate questions for different question types
-                for q_type in random.sample(q_types, min(2, len(q_types))):
+                for q_type in random.sample(relevant_q_types, num_questions):
                     templates = question_templates[q_type]
 
                     # Generate the question
@@ -339,32 +494,18 @@ class DatasetCreator:
                     # Choose a random instruction template
                     instruction = random.choice(instruction_templates)
 
-                    # Create the full prompt
+                    # Create the full prompt - optimized for Llama 2 format
                     prompt = f"""{instruction}
 
 Context:
 {context_text}
 
-Question: {question}
+Question: {question}"""
 
-Answer:"""
-
-                    # Generate answer paraphrases for data augmentation
-                    answer_prefixes = [
-                        f"Based on the provided information, {keyword} is",
-                        f"According to the documentation, {keyword} refers to",
-                        f"The materials indicate that {keyword} involves",
-                        f"From a first responder perspective, {keyword} means",
-                        f"In emergency situations, {keyword} is defined as",
-                    ]
-
-                    # Get relevant content snippet
-                    content_snippet = primary_content
-                    if len(content_snippet) > 300:
-                        content_snippet = content_snippet[:300] + "..."
-
-                    # Create answer with a prefix for better structure
-                    answer = f"{random.choice(answer_prefixes)} {content_snippet}"
+                    # Generate more structured answers for better learning
+                    answer = self._generate_structured_answer(
+                        keyword, doc_group, q_type
+                    )
 
                     qa_pair = {
                         "question": prompt,
@@ -381,6 +522,286 @@ Answer:"""
         )
 
         return filtered_pairs
+
+    def _categorize_documents(
+        self, documents: List[Dict[str, Any]]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Categorize documents by domain category.
+
+        Args:
+            documents: List of document dictionaries
+
+        Returns:
+            Dictionary mapping categories to document lists
+        """
+        categorized = {category: [] for category in self.domain_categories.keys()}
+        categorized["general"] = []  # Default category
+
+        for doc in documents:
+            content = doc.get("content", "").lower()
+            assigned = False
+
+            # Assign to categories based on keyword matches
+            for category, terms in self.domain_categories.items():
+                for term in terms:
+                    if term.lower() in content:
+                        categorized[category].append(doc)
+                        assigned = True
+                        break
+                if assigned:
+                    break
+
+            # If no category matched, add to general
+            if not assigned:
+                categorized["general"].append(doc)
+
+        # Log category counts
+        for category, docs in categorized.items():
+            logger.info(f"Category '{category}': {len(docs)} documents")
+
+        return categorized
+
+    def _identify_relevant_question_types(
+        self, keyword: str, content: str
+    ) -> List[str]:
+        """
+        Identify which question types are most relevant for a given keyword and content.
+
+        Args:
+            keyword: The keyword/topic
+            content: The document content
+
+        Returns:
+            List of relevant question types
+        """
+        content_lower = content.lower()
+        keyword_lower = keyword.lower()
+        relevant_types = []
+
+        # Check for procedural content
+        if any(
+            term in content_lower
+            for term in [
+                "step",
+                "procedure",
+                "protocol",
+                "guideline",
+                "process",
+                "sequence",
+            ]
+        ):
+            relevant_types.append("procedural")
+
+        # Check for application examples
+        if any(
+            term in content_lower
+            for term in ["use", "apply", "implement", "deploy", "utilize"]
+        ):
+            relevant_types.append("application")
+
+        # Check for safety information
+        if any(
+            term in content_lower
+            for term in ["safety", "hazard", "risk", "danger", "protect", "prevention"]
+        ):
+            relevant_types.append("safety_focused")
+
+        # Check for scenario descriptions
+        if any(
+            term in content_lower
+            for term in [
+                "scenario",
+                "situation",
+                "incident",
+                "event",
+                "emergency",
+                "response",
+            ]
+        ):
+            relevant_types.append("scenario_based")
+
+        # Always include factual for basic information
+        relevant_types.append("factual")
+
+        # Check for explanatory needs
+        if len(keyword.split()) > 1 or len(keyword) > 10:
+            relevant_types.append("explanatory")
+
+        # Ensure we have at least 2 question types
+        if len(relevant_types) < 2:
+            if "explanatory" not in relevant_types:
+                relevant_types.append("explanatory")
+
+        return relevant_types
+
+    def _generate_structured_answer(
+        self, keyword: str, doc_group: List[Dict[str, Any]], question_type: str
+    ) -> str:
+        """
+        Generate a structured answer based on keyword, documents and question type.
+
+        Args:
+            keyword: The keyword/topic
+            doc_group: The group of documents for this question
+            question_type: The type of question being asked
+
+        Returns:
+            Structured answer text
+        """
+        # Extract relevant content from all documents
+        combined_content = ""
+        for doc in doc_group:
+            combined_content += " " + doc.get("content", "")
+
+        # Get sentences that mention the keyword
+        sentences = nltk.sent_tokenize(combined_content)
+        relevant_sentences = [s for s in sentences if keyword.lower() in s.lower()]
+
+        # If no direct keyword matches, use sentences that might be topically related
+        if not relevant_sentences:
+            # Look for related terms
+            related_terms = []
+            for category, terms in self.domain_categories.items():
+                for term in terms:
+                    if (
+                        term.lower() in keyword.lower()
+                        or keyword.lower() in term.lower()
+                    ):
+                        related_terms.extend(terms)
+
+            # Get sentences with related terms
+            if related_terms:
+                relevant_sentences = [
+                    s
+                    for s in sentences
+                    if any(term.lower() in s.lower() for term in related_terms)
+                ]
+
+        # If still no relevant sentences, use the first document's content
+        if not relevant_sentences and doc_group:
+            primary_content = doc_group[0].get("content", "")
+            # Take first few sentences as summary
+            relevant_sentences = nltk.sent_tokenize(primary_content)[:3]
+
+        # Craft different answer formats based on question type
+        if question_type == "factual":
+            return self._format_factual_answer(keyword, relevant_sentences)
+        elif question_type == "procedural":
+            return self._format_procedural_answer(keyword, relevant_sentences)
+        elif question_type == "explanatory":
+            return self._format_explanatory_answer(keyword, relevant_sentences)
+        elif question_type == "application":
+            return self._format_application_answer(keyword, relevant_sentences)
+        elif question_type == "scenario_based":
+            return self._format_scenario_answer(keyword, relevant_sentences)
+        elif question_type == "safety_focused":
+            return self._format_safety_answer(keyword, relevant_sentences)
+        else:
+            # Default format
+            return self._format_factual_answer(keyword, relevant_sentences)
+
+    def _format_factual_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format a factual answer with key information."""
+        if not sentences:
+            return f"Based on the provided information, {keyword} is an important concept in emergency response, but specific details are not available in the current context."
+
+        introduction = f"Based on the provided information, {keyword} refers to "
+        main_content = " ".join(sentences[:3])  # Use up to 3 sentences
+
+        # Ensure the answer is complete
+        if not main_content.strip().endswith((".", "!", "?")):
+            main_content = main_content.strip() + "."
+
+        return f"{introduction}{main_content}"
+
+    def _format_procedural_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format a procedural answer with steps."""
+        if not sentences:
+            return f"The procedure for {keyword} requires following proper protocols as outlined in first responder training, though specific steps are not detailed in the provided context."
+
+        introduction = (
+            f"The procedure for handling {keyword} involves the following steps:\n\n"
+        )
+
+        # Try to identify and format steps
+        steps = []
+        for i, sentence in enumerate(sentences[:5]):  # Use up to 5 sentences
+            steps.append(f"{i+1}. {sentence.strip()}")
+
+        main_content = "\n".join(steps)
+
+        return f"{introduction}{main_content}"
+
+    def _format_explanatory_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format an explanatory answer that breaks down the concept."""
+        if not sentences:
+            return f"{keyword} is a concept used in emergency response scenarios. While the exact definition is not provided in the current context, it is generally related to first responder operations and protocols."
+
+        introduction = f"{keyword} can be explained as follows:\n\n"
+
+        # Combine sentences into a cohesive explanation
+        explanation = " ".join(sentences[:4])  # Use up to 4 sentences
+
+        # Add a conclusion if we have enough content
+        if len(sentences) > 2:
+            conclusion = "\n\nUnderstanding this concept is essential for effective emergency response operations."
+        else:
+            conclusion = ""
+
+        return f"{introduction}{explanation}{conclusion}"
+
+    def _format_application_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format an answer about how something is applied in practice."""
+        if not sentences:
+            return f"In practical emergency situations, {keyword} would be applied according to protocols and training, though specifics are not detailed in the provided materials."
+
+        introduction = f"In emergency situations, {keyword} is applied as follows:\n\n"
+
+        # Format application points
+        applications = []
+        for i, sentence in enumerate(sentences[:4]):  # Use up to 4 sentences
+            applications.append(f"• {sentence.strip()}")
+
+        main_content = "\n".join(applications)
+
+        return f"{introduction}{main_content}"
+
+    def _format_scenario_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format an answer in the context of an emergency scenario."""
+        if not sentences:
+            return f"In an emergency scenario involving {keyword}, first responders would follow established protocols and utilize their training to ensure safety and effective response."
+
+        introduction = f"In a scenario involving {keyword}:\n\n"
+
+        # Create a mini-scenario from sentences
+        scenario = " ".join(sentences[:5])  # Use up to 5 sentences
+
+        # Add a practical conclusion
+        conclusion = f"\n\nFirst responders would need to maintain situational awareness and follow protocols when dealing with {keyword} in this type of scenario."
+
+        return f"{introduction}{scenario}{conclusion}"
+
+    def _format_safety_answer(self, keyword: str, sentences: List[str]) -> str:
+        """Format an answer focusing on safety aspects."""
+        if not sentences:
+            return f"Safety considerations for {keyword} are paramount in emergency response. While specific details aren't provided in the current context, standard safety protocols would apply."
+
+        introduction = (
+            f"For {keyword}, the following safety considerations are important:\n\n"
+        )
+
+        # Format safety points
+        safety_points = []
+        for i, sentence in enumerate(sentences[:4]):  # Use up to 4 sentences
+            safety_points.append(f"• {sentence.strip()}")
+
+        main_content = "\n".join(safety_points)
+
+        # Add safety emphasis
+        conclusion = "\n\nAlways prioritize personal safety and follow established protocols when dealing with emergency situations."
+
+        return f"{introduction}{main_content}{conclusion}"
 
     def _filter_qa_pairs(self, qa_pairs):
         """
@@ -553,14 +974,14 @@ Answer:"""
         )
         return train_data, val_data, test_data
 
-    def format_for_tinyllama(
+    def format_for_llama2(
         self,
         train_data: List[Dict[str, str]],
         val_data: List[Dict[str, str]],
         test_data: List[Dict[str, str]],
     ) -> Dict[str, List[Dict[str, str]]]:
         """
-        Format data for TinyLlama fine-tuning.
+        Format data for Llama 2 fine-tuning.
 
         Args:
             train_data: Training data
@@ -570,53 +991,27 @@ Answer:"""
         Returns:
             Dictionary with formatted data
         """
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
 
-        # Format data for TinyLlama with chat template
+        # Llama 2 uses a specific instruction format with <s>[INST] instruction [/INST] response </s>
         def format_item(item):
-            return {
-                "input": f"{item['question']}",
-                "output": f"{item['answer']}",
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {item['answer']}</s>",
-            }
+            # Extract question from the original prompt
+            question_text = ""
+            if "Question:" in item["question"]:
+                question_text = item["question"].split("Question:")[-1].strip()
+            else:
+                # Fallback to using the whole prompt
+                question_text = item["question"]
 
-        formatted_data = {
-            "train": [format_item(item) for item in train_data],
-            "validation": [format_item(item) for item in val_data],
-            "test": [format_item(item) for item in test_data],
-        }
-
-        logger.info("Formatted data for TinyLlama fine-tuning")
-        return formatted_data
-
-    def format_for_llama(
-        self,
-        train_data: List[Dict[str, str]],
-        val_data: List[Dict[str, str]],
-        test_data: List[Dict[str, str]],
-    ) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Format data for Llama 3.1 fine-tuning.
-
-        Args:
-            train_data: Training data
-            val_data: Validation data
-            test_data: Test data
-
-        Returns:
-            Dictionary with formatted data
-        """
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials. Always provide comprehensive, standalone answers that cover all relevant aspects of a topic. Emphasize primary purposes and functions first before discussing secondary details like maintenance. When discussing equipment or procedures, explain what specific hazards they address and how they help minimize risks. Use clear, authoritative language appropriate for first responder training."
-
-        # Format data for Llama 3.1 with chat template
-        def format_item(item):
+            # Use enhanced answer
             enhanced_answer = self._enhance_answer_content(
-                item["question"], item["answer"]
+                question_text, item["answer"]
             )
+
+            # Format according to Llama 2 chat format
             return {
-                "input": f"{item['question']}",
-                "output": f"{enhanced_answer}",
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {enhanced_answer}</s>",
+                "text": f"<s>[INST] {question_text} [/INST] {enhanced_answer} </s>",
+                "instruction": question_text,
+                "response": enhanced_answer,
             }
 
         formatted_data = {
@@ -625,7 +1020,7 @@ Answer:"""
             "test": [format_item(item) for item in test_data],
         }
 
-        logger.info("Formatted data for Llama 3.1 fine-tuning")
+        logger.info("Formatted data for Llama 2 fine-tuning")
         return formatted_data
 
     def _enhance_answer_content(self, question, answer):
@@ -713,24 +1108,28 @@ Answer:"""
         # Load preprocessed data
         documents = self.load_preprocessed_data()
 
-        # Generate question-answer pairs
-        logger.info("Starting question-answer pair generation process")
-        qa_pairs = self.generate_question_answer_pairs(documents)
-        logger.info(f"Successfully generated {len(qa_pairs)} question-answer pairs")
+        # Filter documents
+        filtered_docs = self._filter_documents(documents)
+
+        # Generate QA pairs
+        qa_pairs = self.generate_question_answer_pairs(filtered_docs)
+
+        # Filter QA pairs
+        filtered_qa_pairs = self._filter_qa_pairs(qa_pairs)
 
         # Split data
         logger.info("Splitting data into train/validation/test sets")
-        train_data, val_data, test_data = self.split_data(qa_pairs)
+        train_data, val_data, test_data = self.split_data(filtered_qa_pairs)
 
-        # Format data for the selected model
-        logger.info(f"Formatting data for {self.model_format} fine-tuning")
-        if self.model_format.lower() == "tinyllama":
-            dataset = self.format_for_tinyllama(train_data, val_data, test_data)
-        elif self.model_format.lower() == "llama":
-            dataset = self.format_for_llama(train_data, val_data, test_data)
+        # Format data based on model format
+        if self.model_format.lower() == "llama2":
+            dataset = self.format_for_llama2(train_data, val_data, test_data)
         else:
-            # Default to TinyLlama format
-            dataset = self.format_for_tinyllama(train_data, val_data, test_data)
+            # Default to Llama 2 format
+            logger.warning(
+                f"Unknown model format: {self.model_format}, using llama2 format"
+            )
+            dataset = self.format_for_llama2(train_data, val_data, test_data)
 
         # Save dataset
         logger.info("Saving the final dataset")
@@ -738,3 +1137,60 @@ Answer:"""
 
         logger.info("Dataset creation completed successfully!")
         return dataset
+
+    def _format_data_for_llama2(self, examples):
+        """
+        Format examples specifically for Llama 2 chat model.
+
+        Args:
+            examples: List of examples to format
+
+        Returns:
+            List of formatted examples
+        """
+        formatted_examples = []
+
+        # Llama 2 uses a specific instruction format with <s>[INST] instruction [/INST] response </s>
+        for example in examples:
+            if "instruction" in example and "response" in example:
+                # Format instruction and response using Llama 2 chat format
+                formatted_example = {
+                    "text": f"<s>[INST] {example['instruction'].strip()} [/INST] {example['response'].strip()} </s>",
+                    "instruction": example["instruction"],
+                    "response": example["response"],
+                }
+
+                # Add metadata if available
+                if "metadata" in example:
+                    formatted_example["metadata"] = example["metadata"]
+
+                formatted_examples.append(formatted_example)
+
+        return formatted_examples
+
+    def _create_dataset(self):
+        """
+        Create the dataset based on the preprocessed documents.
+
+        Returns:
+            List of examples with instruction-response pairs
+        """
+        # Load the preprocessed data
+        documents = self._load_preprocessed_data()
+
+        # Generate examples from the documents
+        examples = self._generate_examples(documents)
+
+        # Deduplicate and filter examples
+        examples = self._deduplicate_examples(examples)
+
+        # Format examples based on model_format
+        if self.model_format == "llama2":
+            logger.info("Formatting dataset for Llama 2 model")
+            formatted_examples = self._format_data_for_llama2(examples)
+        else:
+            # Default is llama2 format (changed to keep compatibility)
+            logger.info("Formatting dataset for Llama 2 model")
+            formatted_examples = examples  # Add llama2 formatting if needed
+
+        return formatted_examples

@@ -1,7 +1,7 @@
 [project]
 name = "firstresponders-chatbot"
 version = "0.1.0"
-description = "A RAG-based chatbot for firefighters and first responders using TinyLlama 1.1B and Llama 3.1 1B models"
+description = "A RAG-based chatbot for firefighters and first responders using Llama 2"
 requires-python = ">=3.12"
 authors = [{ name = "Edmund Yu" }]
 dependencies = [

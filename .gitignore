@@ -33,8 +33,7 @@ data/
 !data/models/.gitkeep
 
 # Model directories
-flan-t5-first-responder/
-flan-t5-base-first-responder/
+phi3-medium-first-responder/
 *-first-responder/
 checkpoint-*/
 

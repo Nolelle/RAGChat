@@ -91,6 +91,24 @@ def main():
     server_parser.add_argument(
         "--debug", action="store_true", help="Run the server in debug mode"
     )
+    server_parser.add_argument(
+        "--model-name",
+        type=str,
+        default="microsoft/phi-3-medium-4k-instruct",
+        help="Path to the Phi-3 Medium model",
+    )
+    server_parser.add_argument(
+        "--document-store-dir",
+        type=str,
+        default="uploads",
+        help="Directory to store uploaded files",
+    )
+    server_parser.add_argument(
+        "--use-mps",
+        action="store_true",
+        default=True,
+        help="Use MPS (Apple Silicon) when available",
+    )
 
     args = parser.parse_args()
 
@@ -131,7 +149,11 @@ def main():
         from firstresponders_chatbot.rag.rag_system import RAGSystem
         from firstresponders_chatbot.rag.server import RAGServer
 
-        rag_system = RAGSystem()
+        rag_system = RAGSystem(
+            model_name_or_path=args.model_name,
+            document_store_dir=args.document_store_dir,
+            use_mps=args.use_mps,
+        )
         server = RAGServer(
             rag_system=rag_system,
             host=args.host,

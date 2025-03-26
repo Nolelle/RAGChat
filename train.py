@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Script to train the FirstRespondersChatbot model.
+Script to train the FirstRespondersChatbot model with Llama 2.
 """
 
 import sys
 import argparse
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
-from src.firstresponders_chatbot.training.trainer import ModelTrainer
 import logging
 import os
 import torch
@@ -48,14 +47,17 @@ def download_nltk_resources():
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
+    # Check for Apple Silicon
+    is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model with TinyLlama or Llama 3.1."
+        description="Train the FirstRespondersChatbot model with Llama 2."
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        help="Base model to use (e.g., TinyLlama/TinyLlama-1.1B-Chat-v1.0 or meta-llama/Meta-Llama-3.1-1B",
+        default="meta-llama/Llama-2-7b-chat-hf",
+        help="Base model to use",
     )
     parser.add_argument(
         "--dataset_path",
@@ -66,67 +68,80 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="tinyllama-1.1b-first-responder-fast",
+        default="llama2-first-responder",
         help="Directory to save the trained model",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=1,
+        default=1,  # Keep batch size at 1 due to memory constraints
         help="Batch size for training",
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=16,
+        default=32 if is_mps else 16,  # Higher gradient accumulation for MPS (32 vs 16)
         help="Number of steps to accumulate gradients",
     )
     parser.add_argument(
         "--max_seq_length",
         type=int,
-        default=2048,
+        default=2048 if is_mps else 3072,  # Lower from 3072 to 2048 for Apple Silicon
         help="Maximum sequence length",
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=2e-4,
+        default=1e-4,  # Lowered from 2e-4 to 1e-4 for more stable learning
         help="Learning rate for training",
     )
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=3,
+        default=2,  # Reduced to 2 epochs for Llama 2
         help="Number of epochs to train for",
     )
     parser.add_argument(
         "--fp16",
         action="store_true",
+        default=is_mps,  # Enable by default for MPS
         help="Whether to use mixed precision training",
     )
     parser.add_argument(
         "--load_in_4bit",
         action="store_true",
-        default=True,
+        default=not is_mps,  # Disable 4-bit quantization on MPS by default
         help="Whether to load model in 4-bit precision",
     )
     parser.add_argument(
         "--lora_r",
         type=int,
-        default=16,
+        default=16,  # Keep at 16
         help="Rank of the LoRA update matrices",
     )
     parser.add_argument(
         "--lora_alpha",
         type=int,
-        default=32,
+        default=32,  # Keep at 32
         help="Scaling factor for LoRA",
     )
     parser.add_argument(
         "--lora_dropout",
         type=float,
-        default=0.05,
+        default=0.1,  # Increased from 0.05 to 0.1 for better generalization
         help="Dropout probability for LoRA layers",
+    )
+    parser.add_argument(
+        "--warmup_ratio",
+        type=float,
+        default=0.1,  # Added warmup_ratio parameter
+        help="Fraction of training steps for learning rate warmup",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=0.01,  # Added weight_decay parameter
+        help="Weight decay for AdamW optimizer",
     )
     parser.add_argument(
         "--train_test_split",
@@ -135,22 +150,61 @@ def parse_args() -> argparse.Namespace:
         help="Fraction of data to use for testing",
     )
     parser.add_argument(
-        "--rebuild_dataset",
-        action="store_true",
-        help="Whether to rebuild the dataset from preprocessed documents",
-    )
-    parser.add_argument(
-        "--skip_preprocessing",
-        action="store_true",
-        help="Skip the preprocessing step to use the raw dataset",
-    )
-    parser.add_argument(
         "--max_train_samples",
         type=int,
         default=None,
         help="Maximum number of training samples to use (for faster training)",
     )
-    return parser.parse_args()
+    # Apple Silicon specific arguments
+    if is_mps:
+        parser.add_argument(
+            "--mps_memory_limit",
+            type=int,
+            default=None,
+            help="Set the MPS memory limit (in GB) for training on Apple Silicon",
+        )
+        parser.add_argument(
+            "--mps_enable_eager_mode",
+            action="store_true",
+            default=True,
+            help="Enable eager mode for MPS, may improve stability",
+        )
+
+    args = parser.parse_args()
+
+    # Apply Apple Silicon specific modifications to arguments if needed
+    if is_mps:
+        logger.info("Running on Apple Silicon (MPS) - applying optimized parameters")
+
+        # Ensure batch size is 1 for MPS
+        if args.batch_size > 1:
+            logger.warning(
+                f"Batch size {args.batch_size} is too high for MPS, reducing to 1"
+            )
+            args.batch_size = 1
+
+        # Increase gradient accumulation if needed
+        if args.gradient_accumulation_steps < 16:
+            logger.info(
+                f"Increasing gradient accumulation from {args.gradient_accumulation_steps} to 32 for MPS"
+            )
+            args.gradient_accumulation_steps = 32
+
+        # Apply MPS optimizations if requested
+        if hasattr(args, "mps_memory_limit") and args.mps_memory_limit:
+            # Convert GB to bytes
+            memory_limit = args.mps_memory_limit * 1024 * 1024 * 1024
+            # Check if the function exists (some older versions don't have it)
+            if hasattr(torch.backends.mps, "set_mem_quota"):
+                logger.info(f"Setting MPS memory limit to {args.mps_memory_limit}GB")
+                torch.backends.mps.set_mem_quota(memory_limit)
+
+        # Enable eager mode if requested
+        if hasattr(args, "mps_enable_eager_mode") and args.mps_enable_eager_mode:
+            os.environ["PYTORCH_ENABLE_MPS_EAGER_FALLBACK"] = "1"
+            logger.info("Enabled MPS eager fallback mode")
+
+    return args
 
 
 def load_and_check_json(file_path: str) -> Dict[str, Any]:
@@ -193,27 +247,19 @@ def main():
     if is_mps:
         logger.info("Apple Silicon detected - disabling 8-bit optimization")
         use_8bit = False
+
+        # Clear MPS cache before starting
+        torch.mps.empty_cache()
+
+        # Set optimal thread count for Apple Silicon
+        os.environ["OMP_NUM_THREADS"] = str(min(8, os.cpu_count() or 1))
+        logger.info(
+            f"Set optimal thread count for Apple Silicon: {os.environ.get('OMP_NUM_THREADS')}"
+        )
     else:
         use_8bit = True
 
-    # Rebuild dataset if requested
-    if args.rebuild_dataset:
-        from src.firstresponders_chatbot.preprocessing.preprocessor import (
-            DocumentPreprocessor,
-        )
-        from src.firstresponders_chatbot.training.dataset_creator import DatasetCreator
-
-        print("Rebuilding dataset from documents...")
-        # Preprocess documents
-        preprocessor = DocumentPreprocessor()
-        preprocessor.run()
-
-        # Create dataset
-        dataset_creator = DatasetCreator()
-        dataset_creator.run()
-        print("Dataset rebuilt successfully.")
-
-    # Load the dataset
+    # Load the dataset - expecting it to be preprocessed for Llama 2 already
     logger.info(f"Loading dataset from {args.dataset_path}")
     if args.dataset_path.endswith(".json"):
         dataset = load_dataset("json", data_files=args.dataset_path)
@@ -239,6 +285,12 @@ def main():
     if args.max_train_samples is not None and args.max_train_samples < len(dataset):
         logger.info(f"Using {args.max_train_samples} examples for training")
         dataset = dataset.select(range(args.max_train_samples))
+    # For Apple Silicon, recommend smaller dataset if large
+    elif is_mps and len(dataset) > 1000:
+        logger.warning(
+            f"Large dataset ({len(dataset)} examples) detected on Apple Silicon. "
+            "Consider using --max_train_samples=500 if you encounter memory issues."
+        )
 
     # Split the dataset into train and evaluation sets
     split_dataset = dataset.train_test_split(test_size=args.train_test_split, seed=42)
@@ -246,17 +298,7 @@ def main():
         f"Split dataset into {len(split_dataset['train'])} train and {len(split_dataset['test'])} evaluation examples"
     )
 
-    # For TinyLlama models, we need special formatting
-    if "TinyLlama" in args.model_name:
-        logger.info("Formatting dataset for TinyLlama")
-        # The TinyLlama specific formatting will be handled in the trainer
-
-    # For Llama models, use Llama specific formatting
-    if "Llama" in args.model_name:
-        logger.info("Formatting dataset for Llama")
-        # The Llama specific formatting will be handled in the trainer
-
-    # Create model trainer
+    # Create model trainer with optimized parameters for Llama 2
     trainer = ModelTrainer(
         model_name=args.model_name,
         output_dir=args.output_dir,
@@ -270,10 +312,14 @@ def main():
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        warmup_ratio=args.warmup_ratio,
+        weight_decay=args.weight_decay,
+        model_format="llama2",  # Hardcoded to Llama 2
     )
 
     try:
         # Train the model
+        logger.info("Starting Llama 2 fine-tuning...")
         trainer.train(
             train_dataset=split_dataset["train"], eval_dataset=split_dataset["test"]
         )

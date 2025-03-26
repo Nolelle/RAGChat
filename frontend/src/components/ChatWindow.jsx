@@ -18,6 +18,11 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
         // Handle undefined or null fileName
         if (!fileName) return 'Unknown file';
         
+        // If fileName is a model name, return it directly (no UUID pattern)
+        if (fileName.includes("TinyLlama") || fileName.toLowerCase().includes("model")) {
+            return fileName;
+        }
+        
         // Check if the filename has a UUID pattern (32 hex chars + underscore)
         const uuidPattern = /^[a-f0-9]{32}_(.+)$/i;
         const match = fileName.match(uuidPattern);
@@ -148,10 +153,10 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                                         className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
                                                     >
                                                         <div className="font-medium text-blue-300 mb-1">
-                                                            {formatFileName(ctx.file_name)}
+                                                            {ctx.source || formatFileName(ctx.file_name)}
                                                         </div>
                                                         <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
-                                                            {ctx.snippet || 'No snippet available'}
+                                                            {ctx.content || ctx.snippet || 'No snippet available'}
                                                         </div>
                                                     </div>
                                                 )

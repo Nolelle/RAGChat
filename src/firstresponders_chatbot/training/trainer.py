@@ -50,28 +50,27 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        model_name: str = "meta-llama/Llama-2-7b-chat-hf",
         dataset_path: str = "data/pseudo_data.json",
-        output_dir: str = "tinyllama-1.1b-first-responder-fast",
+        output_dir: str = "trained-models/llama2-first-responder",
         batch_size: int = 1,
-        learning_rate: float = 2e-4,
-        num_train_epochs: int = 3,
-        max_seq_length: int = 512,
+        learning_rate: float = 1e-4,
+        num_train_epochs: int = 2,
+        max_seq_length: int = 2048,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
-        gradient_accumulation_steps: int = 16,
+        gradient_accumulation_steps: int = 32,
         fp16: bool = True,
         load_in_4bit: bool = True,
-        lora_r: int = 8,
-        lora_alpha: int = 16,
-        lora_dropout: float = 0.05,
-        max_train_samples: Optional[
-            int
-        ] = None,  # Added parameter for limiting training data
+        lora_r: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.1,
+        max_train_samples: Optional[int] = None,  # Parameter for limiting training data
         use_8bit_optimizer: bool = True,  # Control 8-bit optimizer usage
+        model_format: str = "llama2",  # Model format to use
     ):
         """
-        Initialize the ModelTrainer with parameters suitable for TinyLlama or Llama.
+        Initialize the ModelTrainer with parameters suitable for Llama 2.
 
         Args:
             model_name: Name of the pre-trained model to use
@@ -91,6 +90,7 @@ class ModelTrainer:
             lora_dropout: Dropout probability for LoRA layers
             max_train_samples: Maximum number of samples to use for training (for faster development)
             use_8bit_optimizer: Whether to use 8-bit optimizers (set to False for Apple Silicon)
+            model_format: Format of the model being used (llama2)
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -106,6 +106,7 @@ class ModelTrainer:
         self.load_in_4bit = load_in_4bit
         self.max_train_samples = max_train_samples
         self.use_8bit_optimizer = use_8bit_optimizer and BITSANDBYTES_AVAILABLE
+        self.model_format = model_format
 
         # LoRA parameters
         self.lora_r = lora_r
@@ -204,532 +205,404 @@ class ModelTrainer:
 
     def format_dataset(self, dataset: Dataset) -> Dataset:
         """
-        Format the dataset for TinyLlama causal language model training.
-        """
-        logger.info("Formatting dataset for TinyLlama")
+        Format the dataset for Llama 2 causal language model training.
 
-        # Identify input and target columns
-        input_col, target_col = self._identify_dataset_columns(dataset)
-        logger.info(f"Using columns: input={input_col}, target={target_col}")
+        Args:
+            dataset: Input dataset
+
+        Returns:
+            Formatted dataset
+        """
+        logger.info("Formatting dataset for Llama 2")
 
         def format_prompt(question, answer):
-            """Format the prompt and response in TinyLlama's expected format."""
-            # Extract actual question from the context+question format
-            if "Context:" in question and "Question:" in question:
-                # Split out just the question part if we're in the RAG format
-                parts = question.split("Question:")
-                if len(parts) > 1:
-                    actual_question = parts[1].strip()
-                else:
-                    actual_question = question
-            else:
-                actual_question = question
+            """Format the prompt and response in Llama 2's expected format."""
+            system_message = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
 
-            # Format in TinyLlama's expected chat format
-            return f"""<s>[INST] <<SYS>>
-You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials.
-<</SYS>>
+            # Format with Llama 2 chat template
+            formatted_text = f"<|im_end|> {system_message}\n<|im_start|>user\n{question}\n<|im_sep|> {answer} <|im_end|>"
 
-{actual_question}
-[/INST]
-{answer}</s>"""
-
-        # Check if the dataset already has a 'text' column
-        if "text" in dataset.column_names:
-            logger.info("Dataset already has a 'text' column, using it directly")
-            return dataset
+            return formatted_text
 
         def format_samples(examples):
-            """Process a batch of examples into formatted prompts."""
-            inputs = examples[input_col]
-            targets = examples[target_col]
+            # Determine input/output columns
+            input_col, target_col = self._identify_dataset_columns(dataset)
 
-            formatted_texts = []
-            for q, a in zip(inputs, targets):
-                formatted_texts.append(format_prompt(q, a))
+            # Apply formatting to create prompts in Llama 2 format
+            if input_col and target_col:
+                texts = [
+                    format_prompt(q, a)
+                    for q, a in zip(examples[input_col], examples[target_col])
+                ]
+            elif "text" in examples:
+                # Already formatted text
+                texts = examples["text"]
+            else:
+                # Default to "input" and "output" if they exist as fallback
+                texts = [
+                    format_prompt(q, a)
+                    for q, a in zip(
+                        examples.get("input", []),
+                        examples.get("output", examples.get("input", [])),
+                    )
+                ]
 
-            return {"text": formatted_texts}
+            return {"text": texts}
 
-        # Apply formatting to create prompts in TinyLlama format
+        # Apply formatting to dataset
         formatted_dataset = dataset.map(
-            format_samples,
-            batched=True,
-            remove_columns=dataset.column_names,
-            desc="Formatting prompts",
+            format_samples, batched=True, remove_columns=dataset.column_names
         )
 
-        # Show a sample of the formatted data
+        logger.info(f"Formatted dataset with {len(formatted_dataset)} examples")
+
+        # Show a sample of the formatted dataset
         if len(formatted_dataset) > 0:
-            logger.info(
-                f"Sample formatted prompt: \n{formatted_dataset[0]['text'][:500]}..."
-            )
+            logger.info(f"Formatted sample: {formatted_dataset[0]}")
 
         return formatted_dataset
 
     def _load_and_prepare_model(self):
         """
-        Load and prepare the TinyLlama model with quantization and LoRA.
+        Load and prepare the Llama 2 model with quantization and LoRA.
+
+        Returns:
+            The prepared model and tokenizer
         """
-        logger.info(f"Loading model {self.model_name} for training...")
+        logger.info(f"Loading model: {self.model_name}")
 
-        # Configure quantization
+        # Skip 4-bit loading when using MPS (Apple Silicon)
+        use_4bit = self.load_in_4bit and self.device.type != "mps"
+
         quantization_config = None
-
-        # Check if we're on Apple Silicon (MPS)
-        is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-
-        # Check for CPU only mode
-        is_cpu_only = not torch.cuda.is_available() and not is_mps
-
-        # Load model with appropriate settings based on hardware
-        if is_mps:
-            logger.info(
-                "Using Apple Silicon (MPS) - disabling quantization for compatibility"
-            )
-            quantization_config = None
-            self.load_in_4bit = False
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map="auto",
-                torch_dtype=torch.float16,
-                use_cache=False,  # Disable KV cache to save memory during training
-            )
-            # Enable gradient checkpointing to reduce memory usage
-            model.gradient_checkpointing_enable()
-
-            # Further reduce sequence length for faster training
-            actual_max_len = min(self.max_seq_length, 512)
-            logger.info(
-                f"Reducing max sequence length to {actual_max_len} for faster training"
-            )
-            self.max_seq_length = actual_max_len
-
-        elif self.load_in_4bit and not is_cpu_only:
-            logger.info("Using 4-bit quantization")
+        if use_4bit:
+            logger.info("Using 4-bit quantization for model loading")
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
             )
-            model = AutoModelForCausalLM.from_pretrained(
+
+        try:
+            # Load tokenizer first
+            tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
-                quantization_config=quantization_config,
-                device_map="auto",
-                torch_dtype=torch.float16,
-            )
-        else:
-            # CPU or other device without quantization
-            logger.info("Using standard precision")
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map="auto",
-                torch_dtype=torch.float16 if self.fp16 else torch.float32,
+                trust_remote_code=True,
             )
 
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            # Make sure padding token is set
+            if tokenizer.pad_token is None:
+                if tokenizer.eos_token:
+                    tokenizer.pad_token = tokenizer.eos_token
+                else:
+                    tokenizer.add_special_tokens({"pad_token": "<pad>"})
 
-        # Set padding token if not set
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+            # Load model with appropriate settings
+            if self.device.type == "mps":
+                logger.info("Loading model for MPS (Apple Silicon) with optimizations")
+                # Clear MPS memory before loading model
+                torch.mps.empty_cache()
 
-        # Prepare model for k-bit training if using quantization
-        if self.load_in_4bit and not is_mps and not is_cpu_only:
-            model = prepare_model_for_kbit_training(model)
+                # For Apple Silicon MPS backend, use optimized loading
+                model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.float16,
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True,  # Reduce CPU memory usage during loading
+                )
 
-        # Configure LoRA with fewer target modules and smaller rank for faster training
-        logger.info("Applying optimized LoRA configuration for faster training")
+                # Move model to MPS device after loading
+                model = model.to(self.device)
 
-        # Simplify by using known working target modules for TinyLlama specifically
-        if "TinyLlama" in self.model_name:
-            logger.info("Detected TinyLlama model, using known working target modules")
-            # According to TinyLlama model architecture, these are the correct modules
-            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
-        else:
-            # For other models, use a general approach
-            if hasattr(model, "get_decoder"):
-                target_modules = find_all_linear_names(model.get_decoder())
+                # Apply memory-efficient settings for Apple Silicon
+                model.config.use_cache = False  # Disable KV cache to save memory
+
+                # Enable gradient checkpointing to reduce memory usage
+                if hasattr(model, "gradient_checkpointing_enable"):
+                    logger.info("Enabling gradient checkpointing for MPS")
+                    model.gradient_checkpointing_enable()
             else:
-                target_modules = find_all_linear_names(model)
+                # Standard loading for CUDA/CPU with optional quantization
+                model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    quantization_config=quantization_config,
+                    device_map="auto",  # Let HF decide device mapping
+                    trust_remote_code=True,
+                )
 
-        logger.info(f"Using target modules: {target_modules}")
+            # Prepare the model for LoRA training
+            logger.info("Preparing model for LoRA training")
 
-        # Simplified LoRA config
-        lora_config = LoraConfig(
-            r=8,  # Reduced rank for faster training
-            lora_alpha=16,
-            target_modules=target_modules,
-            lora_dropout=0.05,
-            bias="none",
-            task_type=TaskType.CAUSAL_LM,
-            modules_to_save=["lm_head"],  # Save the LM head for generation
-        )
+            # If using 4-bit quantization, prepare model for kbit training
+            if use_4bit:
+                model = prepare_model_for_kbit_training(model)
 
-        # Apply LoRA to model
-        model = get_peft_model(model, lora_config)
-        model.print_trainable_parameters()  # Log info about trainable parameters
+            # Setup LoRA configuration
+            target_modules = self._get_lora_target_modules(model)
 
-        return model, tokenizer
+            logger.info(f"Using LoRA with target modules: {target_modules}")
+
+            lora_config = LoraConfig(
+                r=self.lora_r,
+                lora_alpha=self.lora_alpha,
+                target_modules=target_modules,
+                lora_dropout=self.lora_dropout,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,
+            )
+
+            # Apply LoRA to the model
+            model = get_peft_model(model, lora_config)
+
+            # Print number of trainable parameters
+            trainable_params = sum(
+                p.numel() for p in model.parameters() if p.requires_grad
+            )
+            total_params = sum(p.numel() for p in model.parameters())
+            logger.info(
+                f"Trainable parameters: {trainable_params:,} ({trainable_params / total_params:.2%} of {total_params:,} total parameters)"
+            )
+
+            return model, tokenizer
+
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            raise
+
+    def _get_lora_target_modules(self, model):
+        """Determine the appropriate target modules for LoRA based on model architecture."""
+        # Check if it's a Llama 2 model
+        if "llama" in self.model_name.lower():
+            logger.info("Detected Llama 2 model, using optimized target modules")
+            # Target the attention modules for Llama 2
+            return ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+        # Generic approach for other models - find linear layers by partial name match
+        target_modules = []
+        module_types = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "up_proj",
+            "down_proj",
+            "attention",
+            "mlp",
+        ]
+
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                for module_type in module_types:
+                    if module_type in name.lower():
+                        target_modules.append(name.split(".")[-1])
+                        break
+
+        # Remove duplicates and return
+        target_modules = list(set(target_modules))
+
+        if not target_modules:
+            # If no modules found, fall back to default targets for transformer models
+            logger.warning("No target modules found, using default targets for Llama 2")
+            target_modules = ["q_proj", "v_proj"]
+
+        return target_modules
 
     def train(
         self, train_dataset: Dataset, eval_dataset: Optional[Dataset] = None
     ) -> None:
-        """Train the model on the given datasets.
+        """
+        Train the model with the given dataset.
 
         Args:
-            train_dataset: Dataset to train on
-            eval_dataset: Optional dataset to evaluate on during training
+            train_dataset: Training dataset
+            eval_dataset: Evaluation dataset
         """
-        # Log start of training process
-        logger.info("Starting model training")
-        logger.info("Loading and preparing model...")
+        # Create output directory
+        os.makedirs(self.output_dir, exist_ok=True)
 
-        # Load the pre-trained model
-        logger.info(f"Loading model: {self.model_name}")
-
-        # Check if Apple Silicon is available
-        is_apple_silicon = (
-            hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-        )
-
-        # Set device based on availability
-        if is_apple_silicon:
-            logger.info("Apple Silicon (M4 Pro) detected - using MPS")
-            device_choice = "mps"
-            # Disable quantization for M-series chip training
-            logger.info("Adapting configuration for Apple Silicon")
-            quantization_config = None
-            self.load_in_4bit = False
-            use_8bit = False
-        elif torch.cuda.is_available():
-            device_choice = "cuda"
-            # Set up quantization for CUDA if requested
-            use_8bit = self.use_8bit_optimizer
-            if self.load_in_4bit and BITSANDBYTES_AVAILABLE:
-                logger.info("Using 4-bit quantization")
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                )
-            else:
-                quantization_config = None
-        else:
-            logger.info("No GPU detected, using CPU (this might be slower)")
-            device_choice = "cpu"
-            quantization_config = None
-            self.load_in_4bit = False
-            use_8bit = False
-
-        # Check if we're using Llama model
-        is_llama_model = "llama" in self.model_name.lower()
-
-        # Set torch dtype based on model and hardware
-        if is_apple_silicon:
-            # Use float16 for efficient MPS training on Apple Silicon
-            model_dtype = torch.float16 if self.fp16 else torch.float32
-        else:
-            # Use bfloat16 for Llama on other hardware as it works better
-            model_dtype = (
-                torch.bfloat16
-                if is_llama_model and self.fp16
-                else torch.float16 if self.fp16 else torch.float32
-            )
-
-        # Load model with appropriate configuration
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            quantization_config=quantization_config,
-            torch_dtype=model_dtype,
-            trust_remote_code=True,
-            device_map=(
-                device_choice if device_choice != "mps" else "auto"
-            ),  # mps needs special handling
-        )
-
-        # Move model to MPS device if using Apple Silicon
-        if device_choice == "mps":
-            model = model.to("mps")
-
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-
-        # Set padding token if not set
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        # Configure appropriate LoRA settings based on model architecture
-        if is_llama_model:
-            # Target attention modules for Llama
-            logger.info("Configuring LoRA for Llama model")
-            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
-        else:
-            # Target attention modules for TinyLlama (and others)
-            target_modules = [
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ]
-            logger.info(f"Using target modules: {target_modules}")
-
-        # Apply PEFT configuration
-        if not self.load_in_4bit:
-            model = prepare_model_for_kbit_training(model)
-
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=self.lora_r,
-            lora_alpha=self.lora_alpha,
-            lora_dropout=self.lora_dropout,
-            target_modules=target_modules,
-            bias="none",
-        )
-
-        model = get_peft_model(model, peft_config)
-
-        logger.info(f"Model has {model.num_parameters()} parameters")
-        model.print_trainable_parameters()
-
-        # Format datasets based on model type
-        logger.info("Formatting datasets for training")
-
-        # Check and identify input/target columns
-        input_col, target_col = self._identify_dataset_columns(train_dataset)
+        logger.info(f"Training Llama 2 model")
+        logger.info(f"Training parameters:")
+        logger.info(f"  - Batch size: {self.batch_size}")
+        logger.info(f"  - Learning rate: {self.learning_rate}")
+        logger.info(f"  - Epochs: {self.num_train_epochs}")
+        logger.info(f"  - Max sequence length: {self.max_seq_length}")
         logger.info(
-            f"Using '{input_col}' as input column and '{target_col}' as target column"
+            f"  - Gradient accumulation steps: {self.gradient_accumulation_steps}"
+        )
+        logger.info(f"  - FP16: {self.fp16}")
+
+        # Apply Apple Silicon specific optimizations
+        if self.device.type == "mps":
+            logger.info("Applying Apple Silicon (MPS) specific optimizations")
+            # Clear MPS memory
+            torch.mps.empty_cache()
+
+        # Load model and tokenizer
+        model, tokenizer = self._load_and_prepare_model()
+
+        # Handle Apple Silicon device mapping explicitly
+        if self.device.type == "mps":
+            model = model.to(self.device)
+
+        # Format the dataset to use the Llama 2 template
+        logger.info("Formatting dataset for Llama 2")
+
+        # Identify input and target columns
+        input_col, target_col = self._identify_dataset_columns(train_dataset)
+
+        # Format the datasets
+        formatted_train_dataset = self._format_dataset_for_llama2(
+            train_dataset, input_col, target_col
         )
 
-        # Handle dataset formatting for different model types
-        if is_llama_model:
-            logger.info("Formatting dataset for Llama 3.1")
-            formatted_train_dataset = self._format_dataset_for_llama(
-                train_dataset, input_col, target_col
+        # Handle evaluation dataset if provided
+        if eval_dataset is not None:
+            formatted_eval_dataset = self._format_dataset_for_llama2(
+                eval_dataset, input_col, target_col
             )
-            formatted_eval_dataset = None
-            if eval_dataset is not None:
-                formatted_eval_dataset = self._format_dataset_for_llama(
-                    eval_dataset, input_col, target_col
-                )
         else:
-            # Use existing formatting for TinyLlama or other models
-            formatted_train_dataset = self._format_dataset_for_tinyllama(
-                train_dataset, input_col, target_col
-            )
             formatted_eval_dataset = None
-            if eval_dataset is not None:
-                formatted_eval_dataset = self._format_dataset_for_tinyllama(
-                    eval_dataset, input_col, target_col
-                )
 
-        # Tokenization function
+        # Set up a tokenization function to apply to the formatted data
         def tokenize_function(examples):
             # Ensure we're working with flat strings, not nested lists
-            if "text" in examples:
-                texts = examples["text"]
-                if isinstance(texts, list) and len(texts) > 0:
-                    if isinstance(texts[0], list):
-                        logger.warning("Found nested lists in text data, flattening")
-                        texts = [
-                            (
-                                item[0]
-                                if isinstance(item, list) and len(item) > 0
-                                else item
-                            )
-                            for item in texts
-                        ]
+            texts = examples["text"]
+            if (
+                isinstance(texts, list)
+                and len(texts) > 0
+                and isinstance(texts[0], list)
+            ):
+                texts = [t[0] if len(t) > 0 else "" for t in texts]
 
-                # Adjust max_length based on available memory and hardware
-                if is_apple_silicon:
-                    # M4 Pro with 24GB can handle larger sequences
-                    max_length = min(self.max_seq_length, 1024)
-                else:
-                    max_length = min(self.max_seq_length, 512)
+            # Tokenize the texts
+            tokenized = tokenizer(
+                texts,
+                truncation=True,
+                max_length=self.max_seq_length,
+                padding=(
+                    "max_length" if self.device.type == "mps" else False
+                ),  # Always pad for MPS
+                return_tensors=None,  # Return as lists, not tensors
+            )
 
-                logger.info(f"Using max_length={max_length} for tokenization")
+            # Set labels to input_ids
+            tokenized["labels"] = tokenized["input_ids"].copy()
 
-                # Create a new dictionary with only the tokenized text
-                # This avoids any other potentially nested fields
-                result = tokenizer(
-                    texts,
-                    truncation=True,
-                    max_length=max_length,
-                    padding="max_length",
-                    return_tensors=None,  # Return list of integers, not tensors yet
-                )
+            return tokenized
 
-                # If labels are needed for causal LM, copy input_ids to labels
-                result["labels"] = result["input_ids"].copy()
-
-                return result
-            else:
-                raise ValueError(f"Expected 'text' column but found: {examples.keys()}")
-
-        # Process datasets
-        logger.info("Tokenizing train dataset...")
+        # Apply tokenization to the training dataset
+        logger.info("Tokenizing training dataset")
         tokenized_train_dataset = formatted_train_dataset.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=formatted_train_dataset.column_names,  # Remove all original columns
-            desc="Tokenizing training dataset",
+            tokenize_function, batched=True, remove_columns=["text"]
         )
-        logger.info("Train dataset tokenized successfully")
 
-        # Log sample tokenized data
-        logger.info(
-            f"Tokenized train dataset columns: {tokenized_train_dataset.column_names}"
-        )
-        logger.info(f"Tokenized sample: {tokenized_train_dataset[0]}")
-
+        # Apply tokenization to the evaluation dataset if available
         tokenized_eval_dataset = None
         if formatted_eval_dataset is not None:
-            logger.info("Tokenizing eval dataset...")
+            logger.info("Tokenizing evaluation dataset")
             tokenized_eval_dataset = formatted_eval_dataset.map(
-                tokenize_function,
-                batched=True,
-                remove_columns=formatted_eval_dataset.column_names,  # Remove all original columns
-                desc="Tokenizing evaluation dataset",
+                tokenize_function, batched=True, remove_columns=["text"]
             )
-            logger.info("Eval dataset tokenized successfully")
 
-        # Create a data collator for language modeling
-        logger.info("Creating data collator...")
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False,  # We're doing causal LM, not masked LM
-        )
-        logger.info("Data collator created")
+        # Apple Silicon specific data prefetching
+        if self.device.type == "mps":
+            logger.info("Setting up Apple Silicon optimized data formats")
+            # Use smaller prefetch factor for MPS
+            tokenized_train_dataset = tokenized_train_dataset.with_format(
+                "torch", device=self.device
+            )
+            if tokenized_eval_dataset:
+                tokenized_eval_dataset = tokenized_eval_dataset.with_format(
+                    "torch", device=self.device
+                )
 
-        # Adjust batch size based on model and hardware
-        if is_apple_silicon:
-            # M4 Pro with 24GB can handle a bit larger batch size
-            actual_batch_size = 2 if is_llama_model else 1
-        else:
-            actual_batch_size = 1
+        # Data collator for causal language modeling
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-        # Set training epochs
-        actual_epochs = self.num_train_epochs
-
-        logger.info(
-            f"Using training settings: {actual_epochs} epochs with batch size {actual_batch_size}"
-        )
-
-        # Set up the training arguments
-        logger.info("Setting up training arguments...")
-
-        # Use appropriate optimizer based on hardware
-        if is_apple_silicon:
-            logger.info("Using standard AdamW optimizer for Apple Silicon")
-            optim = "adamw_torch"
-        else:
-            if use_8bit and BITSANDBYTES_AVAILABLE:
-                logger.info("Using 8-bit AdamW optimizer")
-                optim = "adamw_8bit"
-            else:
-                logger.info("Using standard AdamW optimizer")
-                optim = "adamw_torch"
-
-        # Configure training args
+        # Set up training arguments
         training_args = TrainingArguments(
             output_dir=self.output_dir,
-            num_train_epochs=actual_epochs,
-            per_device_train_batch_size=actual_batch_size,
+            per_device_train_batch_size=self.batch_size,
+            per_device_eval_batch_size=self.batch_size,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             learning_rate=self.learning_rate,
             weight_decay=self.weight_decay,
             warmup_ratio=self.warmup_ratio,
-            evaluation_strategy="epoch" if eval_dataset else "no",
-            save_strategy="epoch",
-            logging_steps=1,
+            num_train_epochs=self.num_train_epochs,
             logging_dir=os.path.join(self.output_dir, "logs"),
-            save_total_limit=2,
-            load_best_model_at_end=eval_dataset is not None,
-            fp16=self.fp16 and device_choice != "cpu",
-            optim=optim,
-            # Configure for appropriate device
-            use_cpu=device_choice == "cpu",
-            no_cuda=device_choice != "cuda",
+            logging_strategy="steps",
+            logging_steps=10,
+            evaluation_strategy="epoch" if formatted_eval_dataset else "no",
+            save_strategy="epoch",
+            save_total_limit=3,
+            load_best_model_at_end=True if formatted_eval_dataset else False,
+            report_to="tensorboard",
+            seed=42,
+            dataloader_pin_memory=(
+                False if self.device.type == "mps" else True
+            ),  # Disable pin memory for MPS
         )
-        logger.info("Training arguments set up")
 
-        # Create trainer
-        logger.info("Creating trainer...")
+        # MPS-specific mixed precision settings
+        if self.device.type == "mps":
+            logger.info("Using MPS-specific settings for mixed precision")
+            training_args.fp16 = True
+            training_args.optim = "adamw_torch"  # Use standard optimizer for MPS
+            # Disable 8-bit optimizations on MPS
+            self.use_8bit_optimizer = False
+        else:
+            training_args.fp16 = self.fp16
+            training_args.optim = (
+                "adamw_torch"
+                if self.device.type == "mps"
+                else "adamw_8bit" if self.use_8bit_optimizer else "adamw_torch"
+            )
+
+        # Initialize trainer
         trainer = Trainer(
             model=model,
             args=training_args,
             train_dataset=tokenized_train_dataset,
             eval_dataset=tokenized_eval_dataset,
-            data_collator=data_collator,
             tokenizer=tokenizer,
+            data_collator=data_collator,
         )
-        logger.info("Trainer created successfully")
 
         # Train the model
-        logger.info("Starting training loop...")
-        try:
-            logger.info("Calling trainer.train()")
-            trainer.train()
-            logger.info("Training completed successfully!")
-        except Exception as e:
-            logger.error(f"Error during training: {e}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            raise
+        logger.info("Starting training...")
+        trainer.train()
 
         # Save the model
         logger.info(f"Saving model to {self.output_dir}")
         trainer.save_model(self.output_dir)
         tokenizer.save_pretrained(self.output_dir)
 
-        # Save LoRA adapter separately for easier loading
-        model.save_pretrained(os.path.join(self.output_dir, "adapter"))
+        logger.info("Training completed successfully!")
 
-        logger.info("Model and tokenizer saved successfully")
-
-    def _format_dataset_for_tinyllama(self, dataset, input_col, target_col):
-        """Format a dataset for TinyLlama training"""
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
+    def _format_dataset_for_llama2(self, dataset, input_col, target_col):
+        """Format dataset specifically for Llama 2 model structure."""
 
         def format_example(example):
-            question = example[input_col]
-            answer = example[target_col]
+            system_prompt = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
+            user_input = example[input_col]
+            assistant_output = example[target_col]
+
             return {
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{question} [/INST] {answer}</s>"
+                "text": f"<|im_end|> {system_prompt}\n<|im_start|>user\n{user_input}\n<|im_sep|> {assistant_output} <|im_end|>"
             }
 
-        return dataset.map(format_example)
-
-    def _format_dataset_for_llama(self, dataset, input_col, target_col):
-        """Format a dataset for Llama 3.1 training"""
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
-
-        def format_example(example):
-            question = example[input_col]
-            answer = example[target_col]
-            return {
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{question} [/INST] {answer}</s>"
-            }
-
-        return dataset.map(format_example)
+        return dataset.map(format_example, remove_columns=dataset.column_names)
 
     def _identify_dataset_columns(self, dataset: Dataset) -> Tuple[str, str]:
         """
-        Identify the input and target columns in the dataset.
-
-        This method attempts to identify the input and target columns in the dataset
-        by looking for common column names or patterns.
+        Identify input and target columns from the dataset.
 
         Args:
             dataset: The dataset to analyze
 
         Returns:
-            tuple: (input_column_name, target_column_name)
+            Tuple of (input_column_name, target_column_name)
         """
         # List of common names for input and target columns
         input_names = [
@@ -824,3 +697,12 @@ You are a first responders chatbot designed to provide accurate information abou
 
         # Train the model
         self.train(train_dataset=train_dataset, eval_dataset=eval_dataset)
+
+
+if __name__ == "__main__":
+    # Example usage
+    trainer = ModelTrainer(
+        model_name="meta-llama/Llama-2-7b-chat-hf",
+        output_dir="trained-models/llama2-first-responder",
+    )
+    trainer.run()
