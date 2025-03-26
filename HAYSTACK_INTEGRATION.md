@@ -12,7 +12,6 @@ The FirstRespondersChatbot project supports multiple models:
 
 - **TinyLlama 1.1B** (default, "tinyllama-1.1b-first-responder-fast"): Optimized for fast inference
 - **Llama 3.1 1B**: Excellent quality with moderate speed
-- **Phi-3 Mini**: High quality, slightly slower
 - **Flan-T5**: Original model architecture, multiple sizes available
 
 Choose the model that best fits your performance and quality requirements.
@@ -177,25 +176,6 @@ generator = HuggingFaceLocalGenerator(
 )
 ```
 
-### Phi-3 Configuration
-
-For Phi-3 models:
-
-```python
-generator = HuggingFaceLocalGenerator(
-    model="./phi-3-mini-first-responder",
-    task="text-generation",
-    generation_kwargs={
-        "max_new_tokens": 350,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 40,
-        "repetition_penalty": 1.2,
-        "do_sample": True,
-    }
-)
-```
-
 ### Flan-T5 Configuration
 
 For Flan-T5 models:
@@ -256,7 +236,7 @@ quantization_config = BitsAndBytesConfig(
 )
 
 generator = HuggingFaceLocalGenerator(
-    model="./phi-3-mini-first-responder",
+    model="./tinyllama-1.1b-first-responder-fast",
     task="text-generation",
     model_kwargs={"quantization_config": quantization_config}
 )
@@ -470,8 +450,28 @@ Question: {{ query }} [/INST]
 """
 ```
 
+## Full Pipeline Performance
+
+To maximize the quality and efficiency of your FirstRespondersChatbot RAG pipeline:
+
+1. **Select the right model based on your hardware constraints**:
+   - TinyLlama 1.1B for resource-constrained environments
+   - Llama 3.1 1B for a good balance of quality and speed
+
+2. **Tune the retriever components**:
+   - Adjust `top_k` values for each retriever based on your dataset size
+   - Experiment with different embedding models for dense retrieval
+   - Consider using domain-specific rerankers if available
+
+3. **Optimize prompt templates**:
+   - Include explicit instructions to focus on first responder protocols
+   - Structure context information in a way that highlights key safety information
+   - Use conversational memory for multi-turn interactions
+
+This full example creates an enhanced RAG pipeline capable of handling complex first responder queries, with multiple retrieval methods, reranking, and memory. You can customize it based on your needs.
+
 ## Conclusion
 
 By following this guide, you can effectively integrate your trained FirstRespondersChatbot model with Haystack 2.0 to create powerful and efficient RAG pipelines. This approach combines the strengths of both retrieval and generation to provide accurate and contextual responses for first responder queries.
 
-The TinyLlama model configuration ("tinyllama-1.1b-first-responder-fast") provides an excellent balance of speed and response quality, making it ideal for deployment in time-sensitive first responder environments. For scenarios where response quality is paramount, you can easily switch to the Llama 3.1 1B or Phi-3 Mini models by adjusting the configuration.
+The TinyLlama model configuration ("tinyllama-1.1b-first-responder-fast") provides an excellent balance of speed and response quality, making it ideal for deployment in time-sensitive first responder environments. For scenarios where response quality is paramount, you can easily switch to the Llama 3.1 1B model by adjusting the configuration.

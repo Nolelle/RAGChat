@@ -62,11 +62,8 @@ For different model architectures, you can specify the appropriate format:
 # For Llama models
 python create_dataset.py --model_format llama
 
-# For Phi-3 models
-python create_dataset.py --model_format phi-3
-
-# For Flan-T5 models (default)
-python create_dataset.py --model_format flan-t5
+# For TinyLlama models
+python create_dataset.py --model_format tinyllama
 ```
 
 ### Rebuilding the Dataset with Improved Techniques
@@ -93,14 +90,13 @@ python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-fir
 
 ### Key Parameters
 
-- `--model_name`: The base model to fine-tune (options include: flan-t5-*, phi-3-*, llama-*)
+- `--model_name`: The base model to fine-tune (options include: TinyLlama/TinyLlama-1.1B-Chat-v1.0, meta-llama/Llama-3.1-1B-Instruct)
 - `--output_dir`: Directory to save the trained model
 - `--batch_size`: Batch size for training (default: 1, increase for more GPU memory)
 - `--gradient_accumulation_steps`: Number of steps to accumulate gradients (default: 32)
 - `--learning_rate`: Learning rate (default: 3e-5)
 - `--num_train_epochs`: Number of training epochs (default: 8)
-- `--max_source_length`/`--max_seq_length`: Maximum input length (adjust based on model)
-- `--max_target_length`: Maximum output length (for Flan-T5)
+- `--max_seq_length`: Maximum sequence length (adjust based on model)
 - `--train_test_split`: Fraction of data to use for evaluation (default: 0.1)
 
 ## Hardware-Specific Optimizations

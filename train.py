@@ -49,13 +49,13 @@ def download_nltk_resources():
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model with Phi-3 Mini or Llama 3.1."
+        description="Train the FirstRespondersChatbot model with TinyLlama or Llama 3.1."
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="microsoft/Phi-3-mini-4k-instruct",
-        help="Base model to use (e.g., microsoft/Phi-3-mini-4k-instruct or meta-llama/Meta-Llama-3.1-1B",
+        default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        help="Base model to use (e.g., TinyLlama/TinyLlama-1.1B-Chat-v1.0 or meta-llama/Meta-Llama-3.1-1B",
     )
     parser.add_argument(
         "--dataset_path",
@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="phi-3-mini-first-responder",
+        default="tinyllama-1.1b-first-responder-fast",
         help="Directory to save the trained model",
     )
     parser.add_argument(
@@ -246,10 +246,10 @@ def main():
         f"Split dataset into {len(split_dataset['train'])} train and {len(split_dataset['test'])} evaluation examples"
     )
 
-    # For Phi-3 models, we need special formatting
-    if "Phi-3" in args.model_name:
-        logger.info("Formatting dataset for Phi-3")
-        # The Phi-3 specific formatting will be handled in the trainer
+    # For TinyLlama models, we need special formatting
+    if "TinyLlama" in args.model_name:
+        logger.info("Formatting dataset for TinyLlama")
+        # The TinyLlama specific formatting will be handled in the trainer
 
     # For Llama models, use Llama specific formatting
     if "Llama" in args.model_name:

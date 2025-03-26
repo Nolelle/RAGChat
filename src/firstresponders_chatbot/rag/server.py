@@ -8,17 +8,22 @@ handling file uploads and queries, and returning responses.
 import os
 import logging
 import uuid
+import time
+import traceback
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from .rag_system import RAGSystem
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -27,12 +32,13 @@ class RAGServer:
 
     def __init__(
         self,
-        rag_system: RAGSystem,
+        rag_system: RAGSystem = None,
         host: str = "0.0.0.0",
         port: int = 8000,
         debug: bool = True,
         allowed_extensions: set = None,
         max_content_length: int = 16 * 1024 * 1024,  # 16MB
+        uploads_dir: str = "uploads",
     ):
         """
         Initialize the RAG server.
@@ -44,13 +50,24 @@ class RAGServer:
             debug: Whether to run the server in debug mode
             allowed_extensions: Set of allowed file extensions
             max_content_length: Maximum content length for file uploads
+            uploads_dir: Directory for file uploads
         """
-        self.rag_system = rag_system
+        self.rag_system = rag_system or RAGSystem()
         self.host = host
         self.port = port
         self.debug = debug
-        self.allowed_extensions = allowed_extensions or {"pdf", "txt", "md"}
+        self.allowed_extensions = allowed_extensions or {
+            "pdf",
+            "txt",
+            "md",
+            "docx",
+            "html",
+        }
         self.max_content_length = max_content_length
+        self.uploads_dir = Path(uploads_dir)
+
+        # Ensure uploads directory exists
+        os.makedirs(str(self.uploads_dir), exist_ok=True)
 
         # Initialize Flask app
         self.app = Flask(__name__)
@@ -62,7 +79,32 @@ class RAGServer:
         # Register routes
         self._register_routes()
 
-    def _verify_pdf_integrity(self, file_data) -> tuple:
+        # Initialize request counters and stats
+        self.request_count = 0
+        self.start_time = time.time()
+
+    def _verify_file_integrity(self, file_data, file_ext) -> tuple:
+        """
+        Verify file integrity based on file type.
+
+        Args:
+            file_data: Binary content of the file
+            file_ext: File extension
+
+        Returns:
+            tuple: (is_valid, message)
+        """
+        if file_ext == ".pdf":
+            return self._verify_pdf_integrity(file_data)
+        elif file_ext == ".docx":
+            return self._verify_docx_integrity(file_data)
+        elif file_ext in [".txt", ".md", ".html", ".htm"]:
+            return self._verify_text_integrity(file_data)
+
+        # Default case for other file types
+        return True, f"File verification skipped for {file_ext} files"
+
+    def _verify_pdf_integrity(self, file_data) -> Tuple[bool, str]:
         """
         Verify that a PDF file is valid and readable.
 
@@ -141,6 +183,83 @@ class RAGServer:
             logger.error(f"Error verifying PDF: {str(e)}")
             return False, f"PDF verification failed: {str(e)}"
 
+    def _verify_docx_integrity(self, file_data) -> Tuple[bool, str]:
+        """Verify that a DOCX file is valid and readable."""
+        try:
+            import io
+            from docx import Document
+
+            docx_stream = io.BytesIO(file_data)
+
+            try:
+                doc = Document(docx_stream)
+                paragraphs = len(doc.paragraphs)
+
+                # Check if we can extract any text
+                text_content = "\n".join([p.text for p in doc.paragraphs])
+
+                if not text_content or text_content.strip() == "":
+                    return (
+                        True,
+                        "DOCX file is valid but contains no text. Results might be limited.",
+                    )
+
+                # If text content is very small, warn
+                if len(text_content.strip()) < 100:
+                    return (
+                        True,
+                        "DOCX contains very little text. Results might be limited.",
+                    )
+
+                return True, f"DOCX is valid with {paragraphs} paragraphs"
+            except Exception as e:
+                logger.error(f"Error reading DOCX: {str(e)}")
+                return False, f"DOCX could not be read: {str(e)}"
+
+        except ImportError:
+            logger.warning("python-docx not available for DOCX verification")
+            return True, "DOCX verification skipped (python-docx not available)"
+        except Exception as e:
+            logger.error(f"Error verifying DOCX: {str(e)}")
+            return False, f"DOCX verification failed: {str(e)}"
+
+    def _verify_text_integrity(self, file_data) -> Tuple[bool, str]:
+        """Verify that a text file is valid and readable."""
+        try:
+            # Try to decode the text file with different encodings
+            encodings = ["utf-8", "latin-1", "windows-1252", "ascii"]
+            decoded = False
+
+            for encoding in encodings:
+                try:
+                    text = file_data.decode(encoding)
+                    decoded = True
+
+                    # Check if the file has reasonable content
+                    if not text or text.strip() == "":
+                        return True, "Text file is empty. Results might be limited."
+
+                    # If text is very small, warn
+                    if len(text.strip()) < 50:
+                        return (
+                            True,
+                            "Text file contains very little content. Results might be limited.",
+                        )
+
+                    return True, f"Text file is valid ({len(text)} characters)"
+                except UnicodeDecodeError:
+                    continue
+
+            if not decoded:
+                return (
+                    False,
+                    "Text file could not be decoded with any standard encoding.",
+                )
+
+        except Exception as e:
+            logger.error(f"Error verifying text file: {str(e)}")
+            return False, f"Text file verification failed: {str(e)}"
+
     def _register_routes(self):
         """Register routes for the Flask app."""
 
@@ -148,7 +267,15 @@ class RAGServer:
         @self.app.route("/api/health", methods=["GET"])
         def health_check():
             """Health check endpoint."""
-            return jsonify({"status": "ok"})
+            uptime = time.time() - self.start_time
+            return jsonify(
+                {
+                    "status": "ok",
+                    "uptime": f"{uptime:.2f} seconds",
+                    "requests_served": self.request_count,
+                    "version": "1.1.0",
+                }
+            )
 
         # Upload file endpoint
         @self.app.route("/api/upload", methods=["POST"])
@@ -159,6 +286,8 @@ class RAGServer:
             Returns:
                 JSON response with status and message
             """
+            self.request_count += 1
+
             # Check if file part exists in request
             if "file" not in request.files:
                 return (
@@ -174,8 +303,12 @@ class RAGServer:
             if file.filename == "":
                 return jsonify({"status": "error", "message": "No file selected"}), 400
 
+            # Get original filename and secure it
+            original_filename = file.filename
+            filename = secure_filename(original_filename)
+
             # Check if file has allowed extension
-            if not self._allowed_file(file.filename):
+            if not self._allowed_file(filename):
                 return (
                     jsonify(
                         {
@@ -193,33 +326,47 @@ class RAGServer:
                 # Read file data
                 file_data = file.read()
 
-                # For PDFs, verify integrity before processing
-                filename = secure_filename(file.filename)
-                warnings = []
+                # Get file extension
+                file_ext = os.path.splitext(filename)[1].lower()
 
-                if filename.lower().endswith(".pdf"):
-                    is_valid, message = self._verify_pdf_integrity(file_data)
-                    if not is_valid:
-                        return (
-                            jsonify(
-                                {
-                                    "status": "error",
-                                    "message": f"Invalid PDF file: {message}",
-                                }
-                            ),
-                            400,
-                        )
-                    elif "may" in message or "might" in message:
-                        # Add warning to response if there might be issues
-                        warnings.append(message)
+                # Verify file integrity
+                warnings = []
+                is_valid, message = self._verify_file_integrity(file_data, file_ext)
+
+                if not is_valid:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Invalid file: {message}",
+                            }
+                        ),
+                        400,
+                    )
+                elif "may" in message or "might" in message:
+                    # Add warning to response if there might be issues
+                    warnings.append(message)
 
                 # Save and index file with session ID
                 logger.info(
                     f"Saving and indexing file: {filename} for session: {session_id}"
                 )
-                file_path = self.rag_system.save_uploaded_file(
-                    file_data, filename, session_id
-                )
+
+                try:
+                    file_path = self.rag_system.save_uploaded_file(
+                        file_data, filename, session_id
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving file: {str(e)}")
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Error saving file: {str(e)}",
+                            }
+                        ),
+                        500,
+                    )
 
                 # Verify the file was indexed
                 doc_count = 0
@@ -239,7 +386,7 @@ class RAGServer:
 
                 response = {
                     "status": "success",
-                    "message": f"File '{filename}' uploaded successfully",
+                    "message": f"File '{original_filename}' uploaded successfully",
                     "file_path": file_path,
                     "session_id": session_id,
                     "indexed_documents": doc_count,
@@ -250,7 +397,7 @@ class RAGServer:
                     response["warnings"] = warnings
                     if doc_count == 0:
                         response["message"] = (
-                            f"File '{filename}' uploaded but could not be indexed."
+                            f"File '{original_filename}' uploaded but could not be indexed."
                         )
                         response["status"] = "partial_success"
 
@@ -258,9 +405,7 @@ class RAGServer:
 
             except Exception as e:
                 logger.error(f"Error handling file upload: {str(e)}")
-                import traceback
-
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.error(traceback.format_exc())
 
                 return (
                     jsonify(
@@ -281,6 +426,8 @@ class RAGServer:
             Returns:
                 JSON response with the answer and context
             """
+            self.request_count += 1
+
             # Get query from request
             data = request.json
             if not data or "query" not in data:
@@ -291,10 +438,15 @@ class RAGServer:
             session_id = data.get("session_id", "default")
 
             try:
+                start_time = time.time()
                 # Generate response with session context
                 response = self.rag_system.generate_response(
                     query_text, session_id=session_id
                 )
+                end_time = time.time()
+
+                processing_time = end_time - start_time
+                logger.info(f"Query processed in {processing_time:.2f} seconds")
 
                 return jsonify(
                     {
@@ -303,20 +455,55 @@ class RAGServer:
                         "context": response["context"],
                         "query": response["query"],
                         "session_id": session_id,
+                        "processing_time": f"{processing_time:.2f} seconds",
                     }
                 )
 
             except Exception as e:
                 logger.error(f"Error handling query: {str(e)}")
+                logger.error(traceback.format_exc())
+
+                # Provide a more informative error message
+                error_message = str(e)
+                if "CUDA out of memory" in error_message:
+                    error_message = "The system is experiencing high memory usage. Please try again with a simpler query or wait a moment."
+                elif "Connection refused" in error_message:
+                    error_message = "The backend services are currently unavailable. Please try again later."
+
                 return (
                     jsonify(
                         {
                             "status": "error",
-                            "message": f"Error processing query: {str(e)}",
+                            "message": f"Error processing query: {error_message}",
                         }
                     ),
                     500,
                 )
+
+        # Serve uploaded files
+        @self.app.route("/api/files/<path:filename>", methods=["GET"])
+        def serve_file(filename):
+            """Serve uploaded files."""
+            try:
+                # Add security check to prevent path traversal
+                requested_path = os.path.abspath(
+                    os.path.join(self.uploads_dir, filename)
+                )
+                if not requested_path.startswith(os.path.abspath(self.uploads_dir)):
+                    return jsonify({"status": "error", "message": "Access denied"}), 403
+
+                # Check if file exists
+                if not os.path.exists(requested_path):
+                    return (
+                        jsonify({"status": "error", "message": "File not found"}),
+                        404,
+                    )
+
+                # Serve the file
+                return send_from_directory(self.uploads_dir, filename)
+            except Exception as e:
+                logger.error(f"Error serving file: {str(e)}")
+                return jsonify({"status": "error", "message": str(e)}), 500
 
         # Remove file endpoint
         @self.app.route("/api/remove-file", methods=["POST"])
@@ -327,6 +514,8 @@ class RAGServer:
             Returns:
                 JSON response with status and message
             """
+            self.request_count += 1
+
             data = request.json
             if not data or "file_path" not in data:
                 return (
@@ -360,6 +549,7 @@ class RAGServer:
 
             except Exception as e:
                 logger.error(f"Error removing file: {str(e)}")
+                logger.error(traceback.format_exc())
                 return (
                     jsonify(
                         {"status": "error", "message": f"Error removing file: {str(e)}"}
@@ -376,6 +566,8 @@ class RAGServer:
             Returns:
                 JSON response with status and message
             """
+            self.request_count += 1
+
             data = request.json
             session_id = data.get("session_id", "default")
 
@@ -402,6 +594,7 @@ class RAGServer:
 
             except Exception as e:
                 logger.error(f"Error clearing session: {str(e)}")
+                logger.error(traceback.format_exc())
                 return (
                     jsonify(
                         {
@@ -421,6 +614,8 @@ class RAGServer:
             Returns:
                 JSON response with status and message
             """
+            self.request_count += 1
+
             try:
                 self.rag_system.clear_index()
                 return jsonify(
@@ -432,6 +627,7 @@ class RAGServer:
 
             except Exception as e:
                 logger.error(f"Error clearing index: {str(e)}")
+                logger.error(traceback.format_exc())
                 return (
                     jsonify(
                         {
@@ -451,6 +647,8 @@ class RAGServer:
             Returns:
                 JSON response with the list of indexed files
             """
+            self.request_count += 1
+
             try:
                 # Get session ID from query parameter
                 session_id = request.args.get("session_id", "default")
@@ -470,6 +668,7 @@ class RAGServer:
                                     "type": file_path_obj.suffix.lower()[
                                         1:
                                     ],  # Remove the dot
+                                    "last_modified": os.path.getmtime(file_path),
                                 }
                             )
 
@@ -478,6 +677,7 @@ class RAGServer:
                             "status": "success",
                             "files": file_info,
                             "session_id": session_id,
+                            "count": len(file_info),
                         }
                     )
                 else:
@@ -486,12 +686,14 @@ class RAGServer:
                             "status": "success",
                             "files": [],
                             "session_id": session_id,
+                            "count": 0,
                             "message": f"No files found for session {session_id}",
                         }
                     )
 
             except Exception as e:
                 logger.error(f"Error getting indexed files: {str(e)}")
+                logger.error(traceback.format_exc())
                 return (
                     jsonify(
                         {

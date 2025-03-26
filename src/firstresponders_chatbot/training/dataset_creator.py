@@ -2,7 +2,7 @@
 Dataset creation module for the FirstRespondersChatbot project.
 
 This module provides functionality to generate a pseudo-supervised dataset
-for fine-tuning the Phi-3-Mini model (previously Flan-T5-Small).
+for fine-tuning the TinyLlama model.
 """
 
 import json
@@ -34,7 +34,7 @@ class DatasetCreator:
         min_content_length: int = 100,  # Minimum content length to consider
         similarity_threshold: float = 0.8,  # Threshold for duplicate detection
         max_examples_per_doc: int = 3,  # Maximum examples to generate from a document
-        model_format: str = "phi-3",  # Options: "phi-3" or "flan-t5"
+        model_format: str = "tinyllama",  # Options: "tinyllama" or "llama"
     ):
         """
         Initialize the dataset creator.
@@ -48,7 +48,7 @@ class DatasetCreator:
             min_content_length: Minimum content length to consider for a document
             similarity_threshold: Threshold for detecting similar documents
             max_examples_per_doc: Maximum examples to generate from a document
-            model_format: Format to use for the dataset (phi-3 or flan-t5)
+            model_format: Format to use for the dataset (tinyllama or llama)
         """
         self.input_file = Path(input_file)
         self.output_file = Path(output_file)
@@ -553,50 +553,14 @@ Answer:"""
         )
         return train_data, val_data, test_data
 
-    def format_for_flan_t5(
+    def format_for_tinyllama(
         self,
         train_data: List[Dict[str, str]],
         val_data: List[Dict[str, str]],
         test_data: List[Dict[str, str]],
     ) -> Dict[str, List[Dict[str, str]]]:
         """
-        Format data for Flan-T5 fine-tuning.
-
-        Args:
-            train_data: Training data
-            val_data: Validation data
-            test_data: Test data
-
-        Returns:
-            Dictionary with formatted data
-        """
-        # Format data for Flan-T5
-        formatted_data = {
-            "train": [
-                {"input": f"question: {item['question']}", "output": item["answer"]}
-                for item in train_data
-            ],
-            "validation": [
-                {"input": f"question: {item['question']}", "output": item["answer"]}
-                for item in val_data
-            ],
-            "test": [
-                {"input": f"question: {item['question']}", "output": item["answer"]}
-                for item in test_data
-            ],
-        }
-
-        logger.info("Formatted data for Flan-T5 fine-tuning")
-        return formatted_data
-
-    def format_for_phi_3(
-        self,
-        train_data: List[Dict[str, str]],
-        val_data: List[Dict[str, str]],
-        test_data: List[Dict[str, str]],
-    ) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Format data for Phi-3 fine-tuning.
+        Format data for TinyLlama fine-tuning.
 
         Args:
             train_data: Training data
@@ -608,12 +572,12 @@ Answer:"""
         """
         system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
 
-        # Format data for Phi-3 with chat template
+        # Format data for TinyLlama with chat template
         def format_item(item):
             return {
                 "input": f"{item['question']}",
                 "output": f"{item['answer']}",
-                "text": f"<|system|>\n{system_message}\n<|user|>\n{item['question']}\n<|assistant|>\n{item['answer']}",
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {item['answer']}</s>",
             }
 
         formatted_data = {
@@ -622,7 +586,46 @@ Answer:"""
             "test": [format_item(item) for item in test_data],
         }
 
-        logger.info("Formatted data for Phi-3 fine-tuning")
+        logger.info("Formatted data for TinyLlama fine-tuning")
+        return formatted_data
+
+    def format_for_llama(
+        self,
+        train_data: List[Dict[str, str]],
+        val_data: List[Dict[str, str]],
+        test_data: List[Dict[str, str]],
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """
+        Format data for Llama 3.1 fine-tuning.
+
+        Args:
+            train_data: Training data
+            val_data: Validation data
+            test_data: Test data
+
+        Returns:
+            Dictionary with formatted data
+        """
+        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials. Always provide comprehensive, standalone answers that cover all relevant aspects of a topic. Emphasize primary purposes and functions first before discussing secondary details like maintenance. When discussing equipment or procedures, explain what specific hazards they address and how they help minimize risks. Use clear, authoritative language appropriate for first responder training."
+
+        # Format data for Llama 3.1 with chat template
+        def format_item(item):
+            enhanced_answer = self._enhance_answer_content(
+                item["question"], item["answer"]
+            )
+            return {
+                "input": f"{item['question']}",
+                "output": f"{enhanced_answer}",
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {enhanced_answer}</s>",
+            }
+
+        formatted_data = {
+            "train": [format_item(item) for item in train_data],
+            "validation": [format_item(item) for item in val_data],
+            "test": [format_item(item) for item in test_data],
+        }
+
+        logger.info("Formatted data for Llama 3.1 fine-tuning")
         return formatted_data
 
     def _enhance_answer_content(self, question, answer):
@@ -680,45 +683,6 @@ Answer:"""
 
         return answer
 
-    def format_for_llama(
-        self,
-        train_data: List[Dict[str, str]],
-        val_data: List[Dict[str, str]],
-        test_data: List[Dict[str, str]],
-    ) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Format data for Llama 3.1 fine-tuning.
-
-        Args:
-            train_data: Training data
-            val_data: Validation data
-            test_data: Test data
-
-        Returns:
-            Dictionary with formatted data
-        """
-        system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials. Always provide comprehensive, standalone answers that cover all relevant aspects of a topic. Emphasize primary purposes and functions first before discussing secondary details like maintenance. When discussing equipment or procedures, explain what specific hazards they address and how they help minimize risks. Use clear, authoritative language appropriate for first responder training."
-
-        # Format data for Llama 3.1 with chat template
-        def format_item(item):
-            enhanced_answer = self._enhance_answer_content(
-                item["question"], item["answer"]
-            )
-            return {
-                "input": f"{item['question']}",
-                "output": f"{enhanced_answer}",
-                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{item['question']} [/INST] {enhanced_answer}</s>",
-            }
-
-        formatted_data = {
-            "train": [format_item(item) for item in train_data],
-            "validation": [format_item(item) for item in val_data],
-            "test": [format_item(item) for item in test_data],
-        }
-
-        logger.info("Formatted data for Llama 3.1 fine-tuning")
-        return formatted_data
-
     def save_dataset(self, dataset: Dict[str, List[Dict[str, str]]]) -> None:
         """
         Save dataset to a JSON file.
@@ -760,13 +724,13 @@ Answer:"""
 
         # Format data for the selected model
         logger.info(f"Formatting data for {self.model_format} fine-tuning")
-        if self.model_format.lower() == "phi-3":
-            dataset = self.format_for_phi_3(train_data, val_data, test_data)
+        if self.model_format.lower() == "tinyllama":
+            dataset = self.format_for_tinyllama(train_data, val_data, test_data)
         elif self.model_format.lower() == "llama":
             dataset = self.format_for_llama(train_data, val_data, test_data)
         else:
-            # Default to Flan-T5 format for backward compatibility
-            dataset = self.format_for_flan_t5(train_data, val_data, test_data)
+            # Default to TinyLlama format
+            dataset = self.format_for_tinyllama(train_data, val_data, test_data)
 
         # Save dataset
         logger.info("Saving the final dataset")

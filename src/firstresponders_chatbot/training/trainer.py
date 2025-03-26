@@ -50,20 +50,20 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_name: str = "microsoft/Phi-3-mini-4k-instruct",
+        model_name: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         dataset_path: str = "data/pseudo_data.json",
-        output_dir: str = "phi-3-mini-first-responder",
+        output_dir: str = "tinyllama-1.1b-first-responder-fast",
         batch_size: int = 1,
         learning_rate: float = 2e-4,
         num_train_epochs: int = 3,
-        max_seq_length: int = 2048,
+        max_seq_length: int = 512,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
         gradient_accumulation_steps: int = 16,
         fp16: bool = True,
         load_in_4bit: bool = True,
-        lora_r: int = 16,
-        lora_alpha: int = 32,
+        lora_r: int = 8,
+        lora_alpha: int = 16,
         lora_dropout: float = 0.05,
         max_train_samples: Optional[
             int
@@ -71,7 +71,7 @@ class ModelTrainer:
         use_8bit_optimizer: bool = True,  # Control 8-bit optimizer usage
     ):
         """
-        Initialize the ModelTrainer with parameters suitable for Phi-3 or Llama.
+        Initialize the ModelTrainer with parameters suitable for TinyLlama or Llama.
 
         Args:
             model_name: Name of the pre-trained model to use
@@ -204,16 +204,16 @@ class ModelTrainer:
 
     def format_dataset(self, dataset: Dataset) -> Dataset:
         """
-        Format the dataset for Phi-3 causal language model training.
+        Format the dataset for TinyLlama causal language model training.
         """
-        logger.info("Formatting dataset for Phi-3")
+        logger.info("Formatting dataset for TinyLlama")
 
         # Identify input and target columns
         input_col, target_col = self._identify_dataset_columns(dataset)
         logger.info(f"Using columns: input={input_col}, target={target_col}")
 
         def format_prompt(question, answer):
-            """Format the prompt and response in Phi-3's expected format."""
+            """Format the prompt and response in TinyLlama's expected format."""
             # Extract actual question from the context+question format
             if "Context:" in question and "Question:" in question:
                 # Split out just the question part if we're in the RAG format
@@ -225,13 +225,14 @@ class ModelTrainer:
             else:
                 actual_question = question
 
-            # Format in Phi-3's expected chat format
-            return f"""<|system|>
+            # Format in TinyLlama's expected chat format
+            return f"""<s>[INST] <<SYS>>
 You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials.
-<|user|>
+<</SYS>>
+
 {actual_question}
-<|assistant|>
-{answer}"""
+[/INST]
+{answer}</s>"""
 
         # Check if the dataset already has a 'text' column
         if "text" in dataset.column_names:
@@ -249,7 +250,7 @@ You are a first responders chatbot designed to provide accurate information abou
 
             return {"text": formatted_texts}
 
-        # Apply formatting to create prompts in Phi-3 format
+        # Apply formatting to create prompts in TinyLlama format
         formatted_dataset = dataset.map(
             format_samples,
             batched=True,
@@ -265,11 +266,11 @@ You are a first responders chatbot designed to provide accurate information abou
 
         return formatted_dataset
 
-    def load_and_prepare_model(self):
+    def _load_and_prepare_model(self):
         """
-        Load and prepare the Phi-3 Mini model with quantization and LoRA.
+        Load and prepare the TinyLlama model with quantization and LoRA.
         """
-        logger.info(f"Loading model: {self.model_name}")
+        logger.info(f"Loading model {self.model_name} for training...")
 
         # Configure quantization
         quantization_config = None
@@ -340,22 +341,19 @@ You are a first responders chatbot designed to provide accurate information abou
         # Configure LoRA with fewer target modules and smaller rank for faster training
         logger.info("Applying optimized LoRA configuration for faster training")
 
-        # Simplify by using known working target modules for Phi-3 specifically
-        if "Phi-3" in self.model_name:
-            logger.info("Detected Phi-3 model, using known working target modules")
-            # According to Phi-3 model architecture, these are the correct modules
-            target_modules = ["down_proj", "up_proj", "gate_proj"]
+        # Simplify by using known working target modules for TinyLlama specifically
+        if "TinyLlama" in self.model_name:
+            logger.info("Detected TinyLlama model, using known working target modules")
+            # According to TinyLlama model architecture, these are the correct modules
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
         else:
-            # For other models fallback to generic approach
-            logger.info("Using generic target modules for LoRA")
-            target_modules = [
-                "query_key_value",
-                "dense",
-                "dense_h_to_4h",
-                "dense_4h_to_h",
-            ]
+            # For other models, use a general approach
+            if hasattr(model, "get_decoder"):
+                target_modules = find_all_linear_names(model.get_decoder())
+            else:
+                target_modules = find_all_linear_names(model)
 
-        logger.info(f"Selected LoRA target modules: {target_modules}")
+        logger.info(f"Using target modules: {target_modules}")
 
         # Simplified LoRA config
         lora_config = LoraConfig(
@@ -468,7 +466,7 @@ You are a first responders chatbot designed to provide accurate information abou
             logger.info("Configuring LoRA for Llama model")
             target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
         else:
-            # Target attention modules for Phi-3 (and others)
+            # Target attention modules for TinyLlama (and others)
             target_modules = [
                 "q_proj",
                 "k_proj",
@@ -478,6 +476,7 @@ You are a first responders chatbot designed to provide accurate information abou
                 "up_proj",
                 "down_proj",
             ]
+            logger.info(f"Using target modules: {target_modules}")
 
         # Apply PEFT configuration
         if not self.load_in_4bit:
@@ -518,13 +517,13 @@ You are a first responders chatbot designed to provide accurate information abou
                     eval_dataset, input_col, target_col
                 )
         else:
-            # Use existing formatting for Phi-3 or other models
-            formatted_train_dataset = self._format_dataset_for_phi3(
+            # Use existing formatting for TinyLlama or other models
+            formatted_train_dataset = self._format_dataset_for_tinyllama(
                 train_dataset, input_col, target_col
             )
             formatted_eval_dataset = None
             if eval_dataset is not None:
-                formatted_eval_dataset = self._format_dataset_for_phi3(
+                formatted_eval_dataset = self._format_dataset_for_tinyllama(
                     eval_dataset, input_col, target_col
                 )
 
@@ -693,15 +692,15 @@ You are a first responders chatbot designed to provide accurate information abou
 
         logger.info("Model and tokenizer saved successfully")
 
-    def _format_dataset_for_phi3(self, dataset, input_col, target_col):
-        """Format a dataset for Phi-3 training"""
+    def _format_dataset_for_tinyllama(self, dataset, input_col, target_col):
+        """Format a dataset for TinyLlama training"""
         system_message = "You are a first responders chatbot designed to provide accurate information about emergency procedures and protocols based on official training materials."
 
         def format_example(example):
             question = example[input_col]
             answer = example[target_col]
             return {
-                "text": f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
+                "text": f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{question} [/INST] {answer}</s>"
             }
 
         return dataset.map(format_example)

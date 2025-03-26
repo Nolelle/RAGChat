@@ -7,49 +7,33 @@ A chatbot system for first responders using Retrieval-Augmented Generation (RAG)
 The FirstRespondersChatbot is designed to assist first responders by providing quick and accurate information about emergency procedures, protocols, and best practices. The system uses a combination of:
 
 1. **Fine-tuned Language Model**: Models available include:
-   - Flan-T5 model fine-tuned on first responder documentation
-   - Phi-3 Mini model for improved quality and efficiency
-   - **New**: Llama 3.1 1B model for state-of-the-art performance
-   - TinyLlama 1.1B model optimized for fast inference ("tinyllama-1.1b-first-responder-fast")
+   - **TinyLlama 1.1B**: Our primary model optimized for fast inference ("tinyllama-1.1b-first-responder-fast")
+   - **Llama 3.1 1B**: Option for state-of-the-art performance
+   - Flan-T5 model: Legacy support for older deployments
 2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
 3. **Hybrid Retrieval**: Combines semantic search with keyword-based retrieval for better results
 
 ## Current Model Configuration
 
-The system is currently configured to use the "tinyllama-1.1b-first-responder-fast" model by default. This model provides a good balance of response quality and speed, particularly on devices with limited resources.
+The system is now configured to use the "tinyllama-1.1b-first-responder-fast" model exclusively. This model provides an excellent balance of response quality and speed, particularly on devices with limited resources.
 
-## New: Support for Llama 3.1 1B
+## Recent Optimizations (v1.1.0)
 
-The project now supports Meta's Llama 3.1 1B model, which offers several advantages:
+Several important optimizations have been implemented to improve system performance and reliability:
 
-- State-of-the-art performance for a 1B parameter model
-- Excellent performance on Apple Silicon (M4 Pro with 24GB RAM)
-- Enhanced instruction following capabilities
-- Improved context understanding and response generation
-
-## Previous Update: Transition to Phi-3 Mini
-
-This project has been upgraded to use Microsoft's Phi-3 Mini model instead of the previous Flan-T5 model. This transition provides several benefits:
-
-- Better response quality for first responder queries
-- More efficient training on Apple Silicon (M4 Pro)
-- Improved memory management through 4-bit quantization
-- Better handling of complex instructions through the Phi-3 architecture
-
-### Changes Implemented
-
-1. Switched from sequence-to-sequence to causal language modeling
-2. Implemented QLoRA for parameter-efficient fine-tuning
-3. Adapted prompt formats for Phi-3's chat format
-4. Optimized for Apple Silicon through MPS acceleration
-5. Updated RAG pipeline to work with the new model architecture
+1. **Enhanced Memory Management**: Better handling of CUDA memory, with graceful degradation on OOM errors
+2. **Improved Error Handling**: More robust error recovery and informative error messages
+3. **Enhanced File Processing**: Better support for various file formats and encoding detection
+4. **Optimized Prompting**: Refined prompt templates for TinyLlama
+5. **Performance Tracking**: Basic metrics for request processing and system uptime
+6. **Apple Silicon Support**: Improved performance on M-series chips
 
 ## Features
 
-- **Document Processing**: Upload and process PDF, TXT, and MD files containing first responder information
+- **Document Processing**: Upload and process PDF, DOCX, TXT, HTML and MD files containing first responder information
 - **Natural Language Queries**: Ask questions in natural language about emergency procedures
 - **Context-Aware Responses**: Get responses that include citations to the source documents
-- **Hardware Optimization**: Support for Apple Silicon (M1/M2/M3), NVIDIA GPUs, and CPU-only environments
+- **Hardware Optimization**: Support for Apple Silicon (M1/M2/M3/M4), NVIDIA GPUs, and CPU-only environments
 - **Multiple Interfaces**:
   - Command-line interface (CLI) for direct interaction
   - REST API server for integration with web applications
@@ -81,7 +65,7 @@ This project has been upgraded to use Microsoft's Phi-3 Mini model instead of th
 3. (Optional) Download the pre-trained model:
 
    ```bash
-   # Instructions for downloading pre-trained model will be provided
+   # Download from the releases page or build your own with train.py
    ```
 
 ## Usage
@@ -91,13 +75,13 @@ This project has been upgraded to use Microsoft's Phi-3 Mini model instead of th
 To start an interactive chat session:
 
 ```bash
-python cli.py
+python -m firstresponders_chatbot cli chat
 ```
 
 To ask a single question:
 
 ```bash
-python cli.py "What is the protocol for CPR?"
+python -m firstresponders_chatbot cli query "What is the protocol for CPR?"
 ```
 
 ### Document Processing
@@ -105,7 +89,7 @@ python cli.py "What is the protocol for CPR?"
 To preprocess documents:
 
 ```bash
-python preprocess.py --docs-dir ./docs --output-dir ./data
+python -m firstresponders_chatbot preprocess --docs-dir ./docs --output-dir ./data
 ```
 
 ### Dataset Creation
@@ -113,113 +97,96 @@ python preprocess.py --docs-dir ./docs --output-dir ./data
 To create a training dataset:
 
 ```bash
-python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
+python create_dataset.py --model_format tinyllama
 ```
 
 ### Model Training
 
 The system supports various training configurations optimized for different hardware:
 
-#### Basic Training
+#### TinyLlama Training (Recommended)
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --gradient_accumulation_steps 8
 ```
 
-#### Training with Optimizations (Apple Silicon)
+#### Training on Apple Silicon
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder --freeze_encoder --max_source_length 256 --max_target_length 64 --gradient_accumulation_steps 16
-```
-
-#### Two-Stage Training (Recommended)
-
-Stage 1 - Freeze encoder for faster training:
-```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder-stage1 --freeze_encoder --num_train_epochs 3
-```
-
-Stage 2 - Fine-tune the whole model:
-```bash
-python train.py --model_name ./flan-t5-large-first-responder-stage1 --output_dir flan-t5-large-first-responder-final --num_train_epochs 5
+python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --lora_r 8 --lora_alpha 16 --gradient_accumulation_steps 8 --fp16
 ```
 
 #### Advanced Options
 
 - `--rebuild_dataset`: Rebuild the dataset with improved processing techniques
 - `--skip_preprocessing`: Skip tokenization preprocessing (useful for troubleshooting)
-- `--fp16`: Use mixed precision training (not supported on Apple Silicon)
-- `--load_in_8bit`: Load model in 8-bit precision for memory efficiency (NVIDIA GPUs only)
+- `--fp16`: Use mixed precision training (recommended for NVIDIA GPUs)
+- `--load_in_4bit`: Load model in 4-bit precision for memory efficiency (recommended)
+- `--max_train_samples`: Limit training samples for faster iteration during development
 
 ### Server
 
 To start the REST API server:
 
 ```bash
-python server.py --host 0.0.0.0 --port 8000
+python -m firstresponders_chatbot server --host 0.0.0.0 --port 8000
 ```
 
-This will start the server using the default model directory ("tinyllama-1.1b-first-responder-fast"). To use a different model, modify the model_dir parameter in the RAGSystem initialization in server.py.
+This will start the server using the default TinyLlama model directory.
 
 ## API Documentation
 
 The REST API provides the following endpoints:
 
-- `GET /api/health`: Health check endpoint
-- `POST /api/upload`: Upload a document file
+- `GET /api/health`: Health check endpoint with server metrics
+- `POST /api/upload`: Upload a document file (PDF, DOCX, TXT, HTML, MD)
 - `POST /api/query`: Query the RAG system
 - `POST /api/clear`: Clear the document index
 - `GET /api/files`: Get a list of indexed files
+- `GET /api/files/<filename>`: Access uploaded files directly
+- `POST /api/remove-file`: Remove a specific file
+- `POST /api/clear-session`: Clear a specific session
 
-## Training with Llama 3.1 1B
+## Training with Llama 3.1 1B (Alternative)
 
-To train the FirstRespondersChatbot with Llama 3.1 1B, we provide a specialized script optimized for this model. This script is tailored specifically for the Llama 3.1 1B architecture and works well on Apple Silicon M4 Pro with 24GB RAM.
+To train with Llama 3.1 1B as an alternative to TinyLlama:
 
-### Prerequisites
+### Creating a Dataset with Llama Format
 
-Ensure that you have access to the Llama 3.1 1B model. You can request access through HuggingFace's model hub or use their API endpoints.
-
-### Creating a Dataset with Llama 3.1 Format
-
-First, create a dataset specifically formatted for Llama 3.1:
+First, create a dataset specifically formatted for Llama:
 
 ```bash
 python create_dataset.py --model_format llama
 ```
 
-This will create a dataset with the proper Llama chat template format in `data/pseudo_data.json`.
-
 ### Training the Model
 
-To train the model with the optimized Llama 3.1 1B configuration:
+To train the model with the Llama configuration:
 
 ```bash
 python train_llama.py --fp16
 ```
 
-For more control over the training process, you can adjust parameters:
+For more details, see the TRAINING_GUIDE.md file.
 
-```bash
-python train_llama.py \
-  --model_name meta-llama/Meta-Llama-3.1-1B \
-  --batch_size 2 \
-  --gradient_accumulation_steps 8 \
-  --max_seq_length 1024 \
-  --learning_rate 1e-4 \
-  --num_train_epochs 3 \
-  --fp16 \
-  --output_dir llama-3.1-1b-first-responder
-```
+## Deployment
 
-### Performance Comparison
+The FirstRespondersChatbot can be deployed in various environments:
 
-Llama 3.1 1B offers significant improvements over previous models:
+1. **Local Deployment**: Run the CLI tool or server on a local machine
+2. **Cloud Deployment**: Deploy the server on a cloud VM
+3. **Containerized Deployment**: Docker support included (see Dockerfile)
 
-| Model | Parameters | Training Time (3 epochs) | Inference Speed | Response Quality |
-|-------|------------|--------------------------|-----------------|------------------|
-| Flan-T5 Base | 250M | 1.5 hours | Fast | Good |
-| Phi-3 Mini | 3.8B | 4 hours | Medium | Very Good |
-| Llama 3.1 1B | 1B | 2.5 hours | Fast | Excellent |
-| TinyLlama 1.1B | 1.1B | 2 hours | Very Fast | Good |
+## Contributing
 
-The Llama 3.1 1B model provides the best balance of size, training speed, and quality for first responder applications running on Apple Silicon, while TinyLlama offers exceptional speed for scenarios where response time is critical.
+We welcome contributions to the FirstRespondersChatbot! Please see CONTRIBUTING.md for guidelines.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- TinyLlama team for providing an efficient base model
+- Hugging Face for their Transformers library
+- Haystack team for their RAG components

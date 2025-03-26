@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to create a dataset for training the FirstRespondersChatbot with Phi-3.
+Script to create a dataset for training the FirstRespondersChatbot with TinyLlama.
 """
 
 import sys
@@ -28,9 +28,9 @@ def parse_args():
     parser.add_argument(
         "--model_format",
         type=str,
-        default="phi-3",
-        choices=["phi-3", "flan-t5", "llama"],
-        help="Format to use for the dataset (phi-3, flan-t5, or llama)",
+        default="tinyllama",
+        choices=["tinyllama", "llama"],
+        help="Format to use for the dataset (tinyllama or llama)",
     )
     return parser.parse_args()
 
