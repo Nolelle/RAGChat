@@ -34,7 +34,7 @@ def parse_args():
 
 
 def main():
-    """Run the document preprocessor to prepare data for Llama 2 training."""
+    """Run the document preprocessor to prepare data for Llama 3 training."""
     args = parse_args()
 
     logger.info(f"Starting document preprocessing from {args.docs_dir}")

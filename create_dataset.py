@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to create a dataset for training the FirstRespondersChatbot with Llama 2.
+Script to create a dataset for training the FirstRespondersChatbot with Llama 3.
 """
 
 import sys
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Create a dataset for training the FirstRespondersChatbot with Llama 2."
+        description="Create a dataset for training the FirstRespondersChatbot with Llama 3."
     )
     parser.add_argument(
         "--input_file",
@@ -34,28 +34,28 @@ def parse_args():
 
 
 def main():
-    """Create a dataset formatted for Llama 2."""
+    """Create a dataset formatted for Llama 3."""
     args = parse_args()
 
-    logger.info(f"Creating dataset with Llama 2 format from {args.input_file}")
+    logger.info(f"Creating dataset with Llama 3 format from {args.input_file}")
 
-    # Create dataset creator for Llama 2
+    # Create dataset creator optimized for Llama 3
     dataset_creator = DatasetCreator(
         input_file=args.input_file,
         output_file=args.output_file,
-        model_format="llama2",  # Hardcoded to llama2
+        model_format="llama3",  # Use Llama 3 format
         train_ratio=0.8,
         val_ratio=0.1,
         test_ratio=0.1,
-        similarity_threshold=0.65,  # Optimized for Llama 2
-        max_examples_per_doc=5,  # Generate more examples per document
+        similarity_threshold=0.65,
+        max_examples_per_doc=5,
     )
 
     # Run dataset creation
     dataset_creator.run()
 
     logger.info(f"Dataset successfully created and saved to {args.output_file}")
-    logger.info("Dataset is formatted for LLAMA2 model")
+    logger.info("Dataset is formatted for LLAMA3 model")
 
 
 if __name__ == "__main__":

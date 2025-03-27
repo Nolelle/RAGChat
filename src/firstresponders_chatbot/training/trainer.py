@@ -50,9 +50,9 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_name: str = "meta-llama/Llama-2-7b-chat-hf",
+        model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct",
         dataset_path: str = "data/pseudo_data.json",
-        output_dir: str = "trained-models/llama2-first-responder",
+        output_dir: str = "trained-models/llama3-first-responder",
         batch_size: int = 1,
         learning_rate: float = 1e-4,
         num_train_epochs: int = 2,
@@ -67,7 +67,7 @@ class ModelTrainer:
         lora_dropout: float = 0.1,
         max_train_samples: Optional[int] = None,  # Parameter for limiting training data
         use_8bit_optimizer: bool = True,  # Control 8-bit optimizer usage
-        model_format: str = "llama2",  # Model format to use
+        model_format: str = "llama3",  # Model format to use
     ):
         """
         Initialize the ModelTrainer with parameters suitable for Llama 2.
@@ -205,7 +205,7 @@ class ModelTrainer:
 
     def format_dataset(self, dataset: Dataset) -> Dataset:
         """
-        Format the dataset for Llama 2 causal language model training.
+        Format the dataset for Llama 3 causal language model training.
 
         Args:
             dataset: Input dataset
@@ -213,14 +213,18 @@ class ModelTrainer:
         Returns:
             Formatted dataset
         """
-        logger.info("Formatting dataset for Llama 2")
+        logger.info(f"Formatting dataset for {self.model_format}")
 
         def format_prompt(question, answer):
-            """Format the prompt and response in Llama 2's expected format."""
+            """Format the prompt and response in Llama 3's expected format."""
             system_message = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
 
-            # Format with Llama 2 chat template
-            formatted_text = f"<|im_end|> {system_message}\n<|im_start|>user\n{question}\n<|im_sep|> {answer} <|im_end|>"
+            # Format with Llama 3 chat template
+            if self.model_format == "llama3":
+                formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
+            else:
+                # Fallback to Llama 2 format
+                formatted_text = f"<|im_end|> {system_message}\n<|im_start|>user\n{question}\n<|im_sep|> {answer} <|im_end|>"
 
             return formatted_text
 
@@ -228,7 +232,7 @@ class ModelTrainer:
             # Determine input/output columns
             input_col, target_col = self._identify_dataset_columns(dataset)
 
-            # Apply formatting to create prompts in Llama 2 format
+            # Apply formatting to create prompts in Llama 3 format
             if input_col and target_col:
                 texts = [
                     format_prompt(q, a)
@@ -372,11 +376,24 @@ class ModelTrainer:
 
     def _get_lora_target_modules(self, model):
         """Determine the appropriate target modules for LoRA based on model architecture."""
-        # Check if it's a Llama 2 model
+        # Check if it's a Llama model
         if "llama" in self.model_name.lower():
-            logger.info("Detected Llama 2 model, using optimized target modules")
-            # Target the attention modules for Llama 2
-            return ["q_proj", "k_proj", "v_proj", "o_proj"]
+            if self.model_format == "llama3":
+                logger.info("Detected Llama 3 model, using optimized target modules")
+                # Target the attention modules for Llama 3
+                return [
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ]
+            else:
+                logger.info("Detected Llama 2 model, using optimized target modules")
+                # Target the attention modules for Llama 2
+                return ["q_proj", "k_proj", "v_proj", "o_proj"]
 
         # Generic approach for other models - find linear layers by partial name match
         target_modules = []
@@ -421,7 +438,7 @@ class ModelTrainer:
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
 
-        logger.info(f"Training Llama 2 model")
+        logger.info(f"Training {self.model_format.upper()} model")
         logger.info(f"Training parameters:")
         logger.info(f"  - Batch size: {self.batch_size}")
         logger.info(f"  - Learning rate: {self.learning_rate}")
@@ -445,20 +462,20 @@ class ModelTrainer:
         if self.device.type == "mps":
             model = model.to(self.device)
 
-        # Format the dataset to use the Llama 2 template
-        logger.info("Formatting dataset for Llama 2")
+        # Format the dataset to use the appropriate template
+        logger.info(f"Formatting dataset for {self.model_format.upper()}")
 
         # Identify input and target columns
         input_col, target_col = self._identify_dataset_columns(train_dataset)
 
         # Format the datasets
-        formatted_train_dataset = self._format_dataset_for_llama2(
+        formatted_train_dataset = self._format_dataset_for_llama(
             train_dataset, input_col, target_col
         )
 
         # Handle evaluation dataset if provided
         if eval_dataset is not None:
-            formatted_eval_dataset = self._format_dataset_for_llama2(
+            formatted_eval_dataset = self._format_dataset_for_llama(
                 eval_dataset, input_col, target_col
             )
         else:
@@ -580,17 +597,23 @@ class ModelTrainer:
 
         logger.info("Training completed successfully!")
 
-    def _format_dataset_for_llama2(self, dataset, input_col, target_col):
-        """Format dataset specifically for Llama 2 model structure."""
+    def _format_dataset_for_llama(self, dataset, input_col, target_col):
+        """Format dataset specifically for Llama model structure."""
 
         def format_example(example):
             system_prompt = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
             user_input = example[input_col]
             assistant_output = example[target_col]
 
-            return {
-                "text": f"<|im_end|> {system_prompt}\n<|im_start|>user\n{user_input}\n<|im_sep|> {assistant_output} <|im_end|>"
-            }
+            if self.model_format == "llama3":
+                return {
+                    "text": f"<|system|>\n{system_prompt}\n<|user|>\n{user_input}\n<|assistant|>\n{assistant_output}"
+                }
+            else:
+                # Llama 2 format
+                return {
+                    "text": f"<|im_end|> {system_prompt}\n<|im_start|>user\n{user_input}\n<|im_sep|> {assistant_output} <|im_end|>"
+                }
 
         return dataset.map(format_example, remove_columns=dataset.column_names)
 
@@ -702,7 +725,7 @@ class ModelTrainer:
 if __name__ == "__main__":
     # Example usage
     trainer = ModelTrainer(
-        model_name="meta-llama/Llama-2-7b-chat-hf",
-        output_dir="trained-models/llama2-first-responder",
+        model_name="meta-llama/Meta-Llama-3-8B-Instruct",
+        output_dir="trained-models/llama3-first-responder",
     )
     trainer.run()

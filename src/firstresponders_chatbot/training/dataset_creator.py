@@ -2,7 +2,7 @@
 Dataset creator module for the FirstRespondersChatbot.
 
 This module contains the DatasetCreator class for generating a dataset
-for fine-tuning the Llama 2 model.
+for fine-tuning Llama 3 models.
 """
 
 import json
@@ -32,9 +32,9 @@ class DatasetCreator:
         val_ratio: float = 0.1,
         test_ratio: float = 0.1,
         min_content_length: int = 100,  # Minimum content length to consider
-        similarity_threshold: float = 0.65,  # Optimized for Llama 2
-        max_examples_per_doc: int = 5,  # Generate more examples per document
-        model_format: str = "llama2",  # Format to use
+        similarity_threshold: float = 0.65,  # Optimized threshold
+        max_examples_per_doc: int = 5,  # Generate examples per document
+        model_format: str = "llama3",  # Format always set to llama3
     ):
         """
         Initialize the dataset creator.
@@ -48,7 +48,7 @@ class DatasetCreator:
             min_content_length: Minimum content length to consider for a document
             similarity_threshold: Threshold for detecting similar documents
             max_examples_per_doc: Maximum examples to generate from a document
-            model_format: Format to use for the dataset (llama2)
+            model_format: Format to use for the dataset (always llama3)
         """
         self.input_file = Path(input_file)
         self.output_file = Path(output_file)
@@ -974,54 +974,52 @@ Question: {question}"""
         )
         return train_data, val_data, test_data
 
-    def format_for_llama2(
+    def format_for_llama3(
         self,
         train_data: List[Dict[str, str]],
         val_data: List[Dict[str, str]],
         test_data: List[Dict[str, str]],
     ) -> Dict[str, List[Dict[str, str]]]:
         """
-        Format data for Llama 2 fine-tuning.
+        Format the data for Llama 3 fine-tuning.
 
         Args:
-            train_data: Training data
-            val_data: Validation data
-            test_data: Test data
+            train_data: List of training examples
+            val_data: List of validation examples
+            test_data: List of testing examples
 
         Returns:
             Dictionary with formatted data
         """
+        logger.info("Formatting data for Llama 3 fine-tuning")
 
-        # Llama 2 uses a specific instruction format with <s>[INST] instruction [/INST] response </s>
         def format_item(item):
             # Extract question from the original prompt
-            question_text = ""
-            if "Question:" in item["question"]:
-                question_text = item["question"].split("Question:")[-1].strip()
-            else:
-                # Fallback to using the whole prompt
-                question_text = item["question"]
+            question = item.get("instruction", "").strip()
 
-            # Use enhanced answer
-            enhanced_answer = self._enhance_answer_content(
-                question_text, item["answer"]
-            )
+            # Get the answer content, enhancing it if needed
+            answer = item.get("response", "").strip()
+            answer = self._enhance_answer_content(question, answer)
 
-            # Format according to Llama 2 chat format
-            return {
-                "text": f"<s>[INST] {question_text} [/INST] {enhanced_answer} </s>",
-                "instruction": question_text,
-                "response": enhanced_answer,
+            # Format with Llama 3 chat template
+            formatted_text = {
+                "input": question,
+                "output": answer,
+                "text": f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n<|user|>\n{question}\n<|assistant|>\n{answer}",
             }
 
-        formatted_data = {
-            "train": [format_item(item) for item in train_data],
-            "validation": [format_item(item) for item in val_data],
-            "test": [format_item(item) for item in test_data],
-        }
+            return formatted_text
 
-        logger.info("Formatted data for Llama 2 fine-tuning")
-        return formatted_data
+        # Format each dataset
+        formatted_train = [format_item(item) for item in train_data]
+        formatted_val = [format_item(item) for item in val_data]
+        formatted_test = [format_item(item) for item in test_data]
+
+        return {
+            "train": formatted_train,
+            "validation": formatted_val,
+            "test": formatted_test,
+        }
 
     def _enhance_answer_content(self, question, answer):
         """
@@ -1121,15 +1119,8 @@ Question: {question}"""
         logger.info("Splitting data into train/validation/test sets")
         train_data, val_data, test_data = self.split_data(filtered_qa_pairs)
 
-        # Format data based on model format
-        if self.model_format.lower() == "llama2":
-            dataset = self.format_for_llama2(train_data, val_data, test_data)
-        else:
-            # Default to Llama 2 format
-            logger.warning(
-                f"Unknown model format: {self.model_format}, using llama2 format"
-            )
-            dataset = self.format_for_llama2(train_data, val_data, test_data)
+        # Format data for Llama 3
+        dataset = self.format_for_llama3(train_data, val_data, test_data)
 
         # Save dataset
         logger.info("Saving the final dataset")
@@ -1138,9 +1129,9 @@ Question: {question}"""
         logger.info("Dataset creation completed successfully!")
         return dataset
 
-    def _format_data_for_llama2(self, examples):
+    def _format_data_for_llama3(self, examples):
         """
-        Format examples specifically for Llama 2 chat model.
+        Format examples specifically for Llama 3 chat model.
 
         Args:
             examples: List of examples to format
@@ -1150,12 +1141,12 @@ Question: {question}"""
         """
         formatted_examples = []
 
-        # Llama 2 uses a specific instruction format with <s>[INST] instruction [/INST] response </s>
+        # Llama 3 uses a specific format with <|system|> <|user|> <|assistant|>
         for example in examples:
             if "instruction" in example and "response" in example:
-                # Format instruction and response using Llama 2 chat format
+                # Format instruction and response using Llama 3 chat format
                 formatted_example = {
-                    "text": f"<s>[INST] {example['instruction'].strip()} [/INST] {example['response'].strip()} </s>",
+                    "text": f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n<|user|>\n{example['instruction'].strip()}\n<|assistant|>\n{example['response'].strip()}",
                     "instruction": example["instruction"],
                     "response": example["response"],
                 }
@@ -1165,32 +1156,5 @@ Question: {question}"""
                     formatted_example["metadata"] = example["metadata"]
 
                 formatted_examples.append(formatted_example)
-
-        return formatted_examples
-
-    def _create_dataset(self):
-        """
-        Create the dataset based on the preprocessed documents.
-
-        Returns:
-            List of examples with instruction-response pairs
-        """
-        # Load the preprocessed data
-        documents = self._load_preprocessed_data()
-
-        # Generate examples from the documents
-        examples = self._generate_examples(documents)
-
-        # Deduplicate and filter examples
-        examples = self._deduplicate_examples(examples)
-
-        # Format examples based on model_format
-        if self.model_format == "llama2":
-            logger.info("Formatting dataset for Llama 2 model")
-            formatted_examples = self._format_data_for_llama2(examples)
-        else:
-            # Default is llama2 format (changed to keep compatibility)
-            logger.info("Formatting dataset for Llama 2 model")
-            formatted_examples = examples  # Add llama2 formatting if needed
 
         return formatted_examples

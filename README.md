@@ -8,7 +8,6 @@ A RAG-based chatbot for firefighters and first responders, optimized for Apple S
 - [System Overview](#system-overview)
 - [Setup and Installation](#setup-and-installation)
 - [Usage](#usage)
-- [Model Selection](#model-selection)
 - [Training Guide](#training-guide)
 - [API Reference](#api-reference)
 - [Project Structure](#project-structure)
@@ -20,10 +19,10 @@ A RAG-based chatbot for firefighters and first responders, optimized for Apple S
 
 ## Key Features
 
-1. **Multiple Language Model Options**:
-   - TinyLlama 1.1B: Fast, efficient model for resource-constrained environments
-   - Llama 3.1 1B: Balance of quality and performance
-   - Llama 2 7B: Highest quality for when resources permit
+1. **Llama 3 8B Instruct Model**:
+   - High-quality instruction-following capabilities
+   - Excellent context understanding and response accuracy
+   - Optimized specifically for first responder domain knowledge
 
 2. **RAG (Retrieval Augmented Generation)**: Uses your organization's protocol documents
 3. **Optimized for Apple Silicon**: Engineered for performance on M-series chips
@@ -126,51 +125,20 @@ The FirstRespondersChatbot consists of three main subsystems:
 
    This script will:
    - Preprocess documents and create chunks
-   - Generate a training dataset with appropriate formatting
-   - Fine-tune your chosen language model with LoRA
-   - Save the trained model to `trained-models/`
+   - Generate a training dataset with Llama 3 formatting
+   - Fine-tune Llama 3 8B Instruct model with LoRA
+   - Save the trained model to `trained-models/llama3-first-responder`
 
 ### Running the Chatbot
 
 Start the server:
 
 ```bash
-python server.py
-```
-
-This will start the server using the default TinyLlama model.
-
-For model selection, use command-line arguments:
-
-```bash
-# Use Llama 3.1 1B
-python server.py --model llama-3.1-1b-first-responder
-
-# Use Llama 2 7B (requires more resources)
-python server.py --model meta-llama/Llama-2-7b-chat-hf
+python server.py --model trained-models/llama3-first-responder
 ```
 
 Access the web interface:
 - Open your browser to http://localhost:8000
-
-## Model Selection
-
-The system supports multiple models with different performance characteristics:
-
-- **TinyLlama 1.1B** (default): 
-  - Fast inference, lower resource requirements
-  - Good for resource-constrained environments
-  - Works well on older hardware or mobile deployments
-
-- **Llama 3.1 1B**: 
-  - Better quality with moderate performance
-  - Good balance of speed and response quality
-  - Recommended for standard deployments
-
-- **Llama 2 7B**: 
-  - Highest quality but requires more resources
-  - Best reasoning capabilities and complex responses
-  - Recommended when quality is paramount and resources are available
 
 ## Training Guide
 
@@ -182,39 +150,28 @@ First, preprocess your first responder documents:
 python preprocess.py --docs-dir ./docs --output-dir ./data
 ```
 
-Then create a training dataset:
+Then create a training dataset formatted for Llama 3:
 
 ```bash
 python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
 ```
 
-### Model-Specific Dataset Formatting
-
-For different model architectures, you can specify the appropriate format:
+### Training Command
 
 ```bash
-# For Llama models
-python create_dataset.py --model_format llama
-
-# For TinyLlama models
-python create_dataset.py --model_format tinyllama
-```
-
-### Basic Training Command
-
-```bash
-python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast
+# Train with Llama 3 8B Instruct
+python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder
 ```
 
 ### Key Training Parameters
 
-- `--model_name`: Base model to fine-tune (TinyLlama/TinyLlama-1.1B-Chat-v1.0, meta-llama/Llama-3.1-1B-Instruct)
+- `--model_name`: Base model to fine-tune (meta-llama/Meta-Llama-3-8B-Instruct)
 - `--output_dir`: Directory to save the trained model
 - `--batch_size`: Batch size for training (default: 1)
-- `--gradient_accumulation_steps`: Steps to accumulate gradients (default: 32)
-- `--learning_rate`: Learning rate (default: 3e-5)
-- `--num_train_epochs`: Number of training epochs (default: 8)
-- `--max_seq_length`: Maximum sequence length
+- `--gradient_accumulation_steps`: Steps to accumulate gradients (default: 32 for MPS, 16 for others)
+- `--learning_rate`: Learning rate (default: 1e-4)
+- `--num_train_epochs`: Number of training epochs (default: 2)
+- `--max_seq_length`: Maximum sequence length (default: 2048 for MPS, 3072 for others)
 - `--train_test_split`: Fraction of data for evaluation (default: 0.1)
 
 ### Hardware-Specific Training Optimizations
@@ -222,26 +179,18 @@ python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tin
 #### Apple Silicon (M1/M2/M3/M4)
 
 ```bash
-python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --max_seq_length 512 --gradient_accumulation_steps 8
+# For Llama 3 8B (uses our optimized script)
+./run_training_apple_silicon.sh
+
+# Manual configuration for Llama 3
+python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
 ```
 
 #### NVIDIA GPUs
 
 ```bash
-python train.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir tinyllama-1.1b-first-responder-fast --fp16 --load_in_4bit
-```
-
-### Evaluation Metrics
-
-The training process automatically evaluates the model using:
-
-- **ROUGE Scores**: Measures overlap between generated and reference text
-- **BLEU Score**: Evaluates translation quality
-- **Generated Length**: Tracks the average length of generated responses
-
-View metrics with TensorBoard:
-```bash
-tensorboard --logdir ./your-model-dir/runs
+# For Llama 3 8B
+python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder --fp16 --load_in_4bit
 ```
 
 ## API Reference

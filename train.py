@@ -51,12 +51,12 @@ def parse_args() -> argparse.Namespace:
     is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model with Llama 2."
+        description="Train the FirstRespondersChatbot model with Llama 3."
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="meta-llama/Llama-2-7b-chat-hf",
+        default="meta-llama/Meta-Llama-3-8B-Instruct",
         help="Base model to use",
     )
     parser.add_argument(
@@ -259,7 +259,7 @@ def main():
     else:
         use_8bit = True
 
-    # Load the dataset - expecting it to be preprocessed for Llama 2 already
+    # Load the dataset - expecting it to be preprocessed for Llama 3 already
     logger.info(f"Loading dataset from {args.dataset_path}")
     if args.dataset_path.endswith(".json"):
         dataset = load_dataset("json", data_files=args.dataset_path)
@@ -298,7 +298,7 @@ def main():
         f"Split dataset into {len(split_dataset['train'])} train and {len(split_dataset['test'])} evaluation examples"
     )
 
-    # Create model trainer with optimized parameters for Llama 2
+    # Create model trainer with optimized parameters for Llama 3
     trainer = ModelTrainer(
         model_name=args.model_name,
         output_dir=args.output_dir,
@@ -314,12 +314,12 @@ def main():
         lora_dropout=args.lora_dropout,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
-        model_format="llama2",  # Hardcoded to Llama 2
+        model_format="llama3",  # Llama 3 format
     )
 
     try:
         # Train the model
-        logger.info("Starting Llama 2 fine-tuning...")
+        logger.info("Starting Llama 3 fine-tuning...")
         trainer.train(
             train_dataset=split_dataset["train"], eval_dataset=split_dataset["test"]
         )

@@ -2,21 +2,21 @@
 
 # Simple end-to-end training script for FirstRespondersChatbot on Apple Silicon
 echo "======================================================================"
-echo "🚒 FirstResponders Chatbot Training Pipeline for Llama 2 on Apple Silicon"
+echo "🚒 FirstResponders Chatbot Training Pipeline for Llama 3 on Apple Silicon"
 echo "======================================================================"
 
 # Create dirs if they don't exist
 mkdir -p data
-mkdir -p trained-models/llama2-first-responder
-mkdir -p docs
+mkdir -p trained-models/llama3-first-responder
+mkdir -p training-docs
 
-# Check if docs directory is empty
-if [ -z "$(ls -A docs)" ]; then
-    echo "⚠️  Warning: 'docs' directory appears to be empty. Please add your training documents there."
+# Check if training-docs directory is empty
+if [ -z "$(ls -A training-docs)" ]; then
+    echo "⚠️  Warning: 'training-docs' directory appears to be empty. Please add your training documents there."
     echo "   Would you like to continue anyway? (y/n)"
     read response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        echo "Exiting. Please add documents to the 'docs' directory and try again."
+        echo "Exiting. Please add documents to the 'training-docs' directory and try again."
         exit 1
     fi
 fi
@@ -26,9 +26,9 @@ export PYTORCH_ENABLE_MPS_EAGER_FALLBACK=1
 export OMP_NUM_THREADS=8
 echo "✅ Set environment variables for optimal Apple Silicon performance"
 
-# Set model parameters for Llama 2 on Apple Silicon
-MODEL_NAME="meta-llama/Llama-2-7b-chat-hf"
-OUTPUT_DIR="trained-models/llama2-first-responder"
+# Set model parameters for Llama 3 on Apple Silicon
+MODEL_NAME="meta-llama/Meta-Llama-3-8B-Instruct"
+OUTPUT_DIR="trained-models/llama3-first-responder"
 MAX_SEQ_LENGTH=2048
 GRAD_ACCUM_STEPS=32
 LEARNING_RATE=1e-4
@@ -51,13 +51,13 @@ TOTAL_START_TIME=$(date +%s)
 # Step 1: Run preprocessing
 echo "\n🔍 Step 1/3: Running document preprocessing... (estimated time: 3-10 min)"
 STEP1_START_TIME=$(date +%s)
-python3 preprocess.py
+python3 preprocess.py --docs_dir training-docs
 STEP1_END_TIME=$(date +%s)
 STEP1_DURATION=$((STEP1_END_TIME - STEP1_START_TIME))
 echo "✅ Preprocessing completed in $((STEP1_DURATION / 60)) min $((STEP1_DURATION % 60)) sec"
 
-# Step 2: Create the dataset for Llama 2
-echo "\n🧩 Step 2/3: Creating dataset with Llama 2 format... (estimated time: 5-15 min)"
+# Step 2: Create the dataset for Llama 3
+echo "\n🧩 Step 2/3: Creating dataset with Llama 3 format... (estimated time: 5-15 min)"
 STEP2_START_TIME=$(date +%s)
 python3 create_dataset.py
 STEP2_END_TIME=$(date +%s)
@@ -65,7 +65,7 @@ STEP2_DURATION=$((STEP2_END_TIME - STEP2_START_TIME))
 echo "✅ Dataset creation completed in $((STEP2_DURATION / 60)) min $((STEP2_DURATION % 60)) sec"
 
 # Step 3: Run the training with the preprocessed dataset
-echo "\n🧠 Step 3/3: Training Llama 2 model... (estimated time: 30-120 min)"
+echo "\n🧠 Step 3/3: Training Llama 3 model... (estimated time: 30-120 min)"
 STEP3_START_TIME=$(date +%s)
 python3 train.py \
     --model_name $MODEL_NAME \
