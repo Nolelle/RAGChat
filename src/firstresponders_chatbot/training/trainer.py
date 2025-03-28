@@ -50,7 +50,7 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct",
+        model_name: str = "microsoft/Phi-4-mini-instruct",
         dataset_path: str = "data/pseudo_data.json",
         output_dir: str = "trained-models/llama3-first-responder",
         batch_size: int = 1,
@@ -67,7 +67,6 @@ class ModelTrainer:
         lora_dropout: float = 0.1,
         max_train_samples: Optional[int] = None,  # Parameter for limiting training data
         use_8bit_optimizer: bool = True,  # Control 8-bit optimizer usage
-        model_format: str = "llama3",  # Model format to use
     ):
         """
         Initialize the ModelTrainer with parameters suitable for Llama 2.
@@ -90,7 +89,6 @@ class ModelTrainer:
             lora_dropout: Dropout probability for LoRA layers
             max_train_samples: Maximum number of samples to use for training (for faster development)
             use_8bit_optimizer: Whether to use 8-bit optimizers (set to False for Apple Silicon)
-            model_format: Format of the model being used (llama2)
         """
         self.model_name = model_name
         self.dataset_path = dataset_path
@@ -106,7 +104,6 @@ class ModelTrainer:
         self.load_in_4bit = load_in_4bit
         self.max_train_samples = max_train_samples
         self.use_8bit_optimizer = use_8bit_optimizer and BITSANDBYTES_AVAILABLE
-        self.model_format = model_format
 
         # LoRA parameters
         self.lora_r = lora_r
@@ -213,18 +210,14 @@ class ModelTrainer:
         Returns:
             Formatted dataset
         """
-        logger.info(f"Formatting dataset for {self.model_format}")
+        logger.info(f"Formatting dataset for {self.model_name}")
 
         def format_prompt(question, answer):
             """Format the prompt and response in Llama 3's expected format."""
             system_message = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
 
             # Format with Llama 3 chat template
-            if self.model_format == "llama3":
-                formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
-            else:
-                # Fallback to Llama 2 format
-                formatted_text = f"<|im_end|> {system_message}\n<|im_start|>user\n{question}\n<|im_sep|> {answer} <|im_end|>"
+            formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
 
             return formatted_text
 
@@ -378,22 +371,9 @@ class ModelTrainer:
         """Determine the appropriate target modules for LoRA based on model architecture."""
         # Check if it's a Llama model
         if "llama" in self.model_name.lower():
-            if self.model_format == "llama3":
-                logger.info("Detected Llama 3 model, using optimized target modules")
-                # Target the attention modules for Llama 3
-                return [
-                    "q_proj",
-                    "k_proj",
-                    "v_proj",
-                    "o_proj",
-                    "gate_proj",
-                    "up_proj",
-                    "down_proj",
-                ]
-            else:
-                logger.info("Detected Llama 2 model, using optimized target modules")
-                # Target the attention modules for Llama 2
-                return ["q_proj", "k_proj", "v_proj", "o_proj"]
+            logger.info("Detected Llama model, using optimized target modules")
+            # Target the attention modules for Llama
+            return ["q_proj", "k_proj", "v_proj", "o_proj"]
 
         # Generic approach for other models - find linear layers by partial name match
         target_modules = []
@@ -420,7 +400,7 @@ class ModelTrainer:
 
         if not target_modules:
             # If no modules found, fall back to default targets for transformer models
-            logger.warning("No target modules found, using default targets for Llama 2")
+            logger.warning("No target modules found, using default targets for Llama")
             target_modules = ["q_proj", "v_proj"]
 
         return target_modules
@@ -438,7 +418,7 @@ class ModelTrainer:
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
 
-        logger.info(f"Training {self.model_format.upper()} model")
+        logger.info(f"Training model: {self.model_name}")
         logger.info(f"Training parameters:")
         logger.info(f"  - Batch size: {self.batch_size}")
         logger.info(f"  - Learning rate: {self.learning_rate}")
@@ -462,26 +442,10 @@ class ModelTrainer:
         if self.device.type == "mps":
             model = model.to(self.device)
 
-        # Format the dataset to use the appropriate template
-        logger.info(f"Formatting dataset for {self.model_format.upper()}")
+        # Dataset is assumed to be pre-formatted with a 'text' column by create_dataset.py
+        logger.info("Using pre-formatted dataset with 'text' column")
 
-        # Identify input and target columns
-        input_col, target_col = self._identify_dataset_columns(train_dataset)
-
-        # Format the datasets
-        formatted_train_dataset = self._format_dataset_for_llama(
-            train_dataset, input_col, target_col
-        )
-
-        # Handle evaluation dataset if provided
-        if eval_dataset is not None:
-            formatted_eval_dataset = self._format_dataset_for_llama(
-                eval_dataset, input_col, target_col
-            )
-        else:
-            formatted_eval_dataset = None
-
-        # Set up a tokenization function to apply to the formatted data
+        # Set up a tokenization function to apply to the pre-formatted data
         def tokenize_function(examples):
             # Ensure we're working with flat strings, not nested lists
             texts = examples["text"]
@@ -510,16 +474,18 @@ class ModelTrainer:
 
         # Apply tokenization to the training dataset
         logger.info("Tokenizing training dataset")
-        tokenized_train_dataset = formatted_train_dataset.map(
-            tokenize_function, batched=True, remove_columns=["text"]
+        tokenized_train_dataset = train_dataset.map(
+            tokenize_function, batched=True, remove_columns=train_dataset.column_names
         )
 
         # Apply tokenization to the evaluation dataset if available
         tokenized_eval_dataset = None
-        if formatted_eval_dataset is not None:
+        if eval_dataset is not None:
             logger.info("Tokenizing evaluation dataset")
-            tokenized_eval_dataset = formatted_eval_dataset.map(
-                tokenize_function, batched=True, remove_columns=["text"]
+            tokenized_eval_dataset = eval_dataset.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=eval_dataset.column_names,
             )
 
         # Apple Silicon specific data prefetching
@@ -550,10 +516,10 @@ class ModelTrainer:
             logging_dir=os.path.join(self.output_dir, "logs"),
             logging_strategy="steps",
             logging_steps=10,
-            evaluation_strategy="epoch" if formatted_eval_dataset else "no",
+            evaluation_strategy="epoch" if eval_dataset else "no",
             save_strategy="epoch",
             save_total_limit=3,
-            load_best_model_at_end=True if formatted_eval_dataset else False,
+            load_best_model_at_end=bool(eval_dataset),
             report_to="tensorboard",
             seed=42,
             dataloader_pin_memory=(
@@ -597,35 +563,12 @@ class ModelTrainer:
 
         logger.info("Training completed successfully!")
 
-    def _format_dataset_for_llama(self, dataset, input_col, target_col):
-        """Format dataset specifically for Llama model structure."""
-
-        def format_example(example):
-            system_prompt = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
-            user_input = example[input_col]
-            assistant_output = example[target_col]
-
-            if self.model_format == "llama3":
-                return {
-                    "text": f"<|system|>\n{system_prompt}\n<|user|>\n{user_input}\n<|assistant|>\n{assistant_output}"
-                }
-            else:
-                # Llama 2 format
-                return {
-                    "text": f"<|im_end|> {system_prompt}\n<|im_start|>user\n{user_input}\n<|im_sep|> {assistant_output} <|im_end|>"
-                }
-
-        return dataset.map(format_example, remove_columns=dataset.column_names)
-
-    def _identify_dataset_columns(self, dataset: Dataset) -> Tuple[str, str]:
+    def _identify_dataset_columns(
+        self, dataset: Dataset
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Identify input and target columns from the dataset.
-
-        Args:
-            dataset: The dataset to analyze
-
-        Returns:
-            Tuple of (input_column_name, target_column_name)
+        Returns None if standard columns aren't found (e.g., only 'text' column exists).
         """
         # List of common names for input and target columns
         input_names = [
@@ -685,12 +628,9 @@ class ModelTrainer:
                     elif any(name in col_lower for name in target_names):
                         target_col = col
 
-        # Raise an error if we couldn't identify the columns
-        if input_col is None or target_col is None:
-            raise ValueError(
-                f"Could not identify input and target columns in dataset. "
-                f"Available columns: {columns}"
-            )
+        # If only 'text' column is present after formatting, return None
+        if "text" in dataset.column_names and len(dataset.column_names) == 1:
+            return None, None
 
         return input_col, target_col
 

@@ -974,14 +974,14 @@ Question: {question}"""
         )
         return train_data, val_data, test_data
 
-    def format_for_llama3(
+    def format_for_chatml(
         self,
         train_data: List[Dict[str, str]],
         val_data: List[Dict[str, str]],
         test_data: List[Dict[str, str]],
     ) -> Dict[str, List[Dict[str, str]]]:
         """
-        Format the data for Llama 3 fine-tuning.
+        Format the data using a generic ChatML-like structure (Phi-4, Llama 3 compatible).
 
         Args:
             train_data: List of training examples
@@ -991,7 +991,7 @@ Question: {question}"""
         Returns:
             Dictionary with formatted data
         """
-        logger.info("Formatting data for Llama 3 fine-tuning")
+        logger.info("Formatting data using ChatML-like structure")
 
         def format_item(item):
             # Extract question from the original prompt
@@ -1001,14 +1001,25 @@ Question: {question}"""
             answer = item.get("response", "").strip()
             answer = self._enhance_answer_content(question, answer)
 
-            # Format with Llama 3 chat template
-            formatted_text = {
+            # Define the system prompt
+            system_prompt = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
+
+            # Format with Phi-4-mini chat template (includes <|end|>)
+            # Note: Ensure no trailing spaces are added before <|end|>
+            formatted_text = (
+                f"<|system|>\n{system_prompt}<|end|>\n"
+                f"<|user|>\n{question}<|end|>\n"
+                f"<|assistant|>\n{answer}<|end|>"
+            )
+
+            # Create the final dictionary for the dataset
+            formatted_dict = {
                 "input": question,
                 "output": answer,
-                "text": f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n<|user|>\n{question}\n<|assistant|>\n{answer}",
+                "text": formatted_text,
             }
 
-            return formatted_text
+            return formatted_dict
 
         # Format each dataset
         formatted_train = [format_item(item) for item in train_data]
@@ -1120,7 +1131,7 @@ Question: {question}"""
         train_data, val_data, test_data = self.split_data(filtered_qa_pairs)
 
         # Format data for Llama 3
-        dataset = self.format_for_llama3(train_data, val_data, test_data)
+        dataset = self.format_for_chatml(train_data, val_data, test_data)
 
         # Save dataset
         logger.info("Saving the final dataset")

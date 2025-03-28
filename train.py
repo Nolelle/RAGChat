@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
     parser = argparse.ArgumentParser(
-        description="Train the FirstRespondersChatbot model with Llama 3."
+        description="Train the FirstRespondersChatbot model."
     )
     parser.add_argument(
         "--model_name",
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="llama2-first-responder",
+        default="trained-models/phi4-mini-first-responder",
         help="Directory to save the trained model",
     )
     parser.add_argument(
@@ -288,7 +288,7 @@ def main():
         f"Split dataset into {len(split_dataset['train'])} train and {len(split_dataset['test'])} evaluation examples"
     )
 
-    # Create model trainer with optimized parameters for Llama 3
+    # Create model trainer
     trainer = ModelTrainer(
         model_name=args.model_name,
         output_dir=args.output_dir,
@@ -304,12 +304,11 @@ def main():
         lora_dropout=args.lora_dropout,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
-        model_format="llama3",  # Llama 3 format
     )
 
     try:
         # Train the model
-        logger.info("Starting Llama 3 fine-tuning...")
+        logger.info(f"Starting fine-tuning for {args.model_name}...")
         trainer.train(
             train_dataset=split_dataset["train"], eval_dataset=split_dataset["test"]
         )

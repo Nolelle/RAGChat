@@ -35,9 +35,25 @@ def parse_args():
 
 def main():
     """Create a dataset formatted for Llama 3."""
-    args = parse_args()
+    parser = argparse.ArgumentParser(
+        description="Create dataset for FirstRespondersChatbot"
+    )
+    parser.add_argument(
+        "--input_file",
+        type=str,
+        default="data/preprocessed_data.json",
+        help="Path to the preprocessed data file",
+    )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default="data/pseudo_data.json",
+        help="Path to save the generated dataset",
+    )
+    args = parser.parse_args()
 
-    logger.info(f"Creating dataset with Llama 3 format from {args.input_file}")
+    # Log the start
+    logger.info(f"Creating dataset from {args.input_file}")
 
     # Create dataset creator optimized for Llama 3
     dataset_creator = DatasetCreator(

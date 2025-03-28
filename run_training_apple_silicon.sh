@@ -2,7 +2,7 @@
 
 # Simple end-to-end training script for FirstRespondersChatbot on Apple Silicon
 echo "======================================================================"
-echo "🚒 FirstResponders Chatbot Training Pipeline for Llama 3 on Apple Silicon"
+echo "🚒 FirstResponders Chatbot Training Pipeline for Phi-4-mini on Apple Silicon"
 echo "======================================================================"
 
 # Create dirs if they don't exist
