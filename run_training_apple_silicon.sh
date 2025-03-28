@@ -7,7 +7,7 @@ echo "======================================================================"
 
 # Create dirs if they don't exist
 mkdir -p data
-mkdir -p trained-models/llama3-first-responder
+mkdir -p trained-models/phi4-mini-first-responder
 mkdir -p training-docs
 
 # Check if training-docs directory is empty
@@ -26,15 +26,18 @@ export PYTORCH_ENABLE_MPS_EAGER_FALLBACK=1
 export OMP_NUM_THREADS=8
 echo "✅ Set environment variables for optimal Apple Silicon performance"
 
-# Set model parameters for Llama 3 on Apple Silicon
-MODEL_NAME="meta-llama/Meta-Llama-3-8B-Instruct"
-OUTPUT_DIR="trained-models/llama3-first-responder"
+# Set model parameters for Phi-4-mini on Apple Silicon
+MODEL_NAME="microsoft/Phi-4-mini-instruct"
+OUTPUT_DIR="trained-models/phi4-mini-first-responder"
 MAX_SEQ_LENGTH=2048
 GRAD_ACCUM_STEPS=32
 LEARNING_RATE=1e-4
 BATCH_SIZE=1
 EPOCHS=2
 LORA_DROPOUT=0.1
+
+# Create the output directory if it doesn't exist
+mkdir -p $OUTPUT_DIR
 
 echo "📋 Training Configuration:"
 echo "   • Model: $MODEL_NAME"
@@ -56,8 +59,8 @@ STEP1_END_TIME=$(date +%s)
 STEP1_DURATION=$((STEP1_END_TIME - STEP1_START_TIME))
 echo "✅ Preprocessing completed in $((STEP1_DURATION / 60)) min $((STEP1_DURATION % 60)) sec"
 
-# Step 2: Create the dataset for Llama 3
-echo "\n🧩 Step 2/3: Creating dataset with Llama 3 format... (estimated time: 5-15 min)"
+# Step 2: Create the dataset for the specified format (should be adaptable)
+echo "\n🧩 Step 2/3: Creating dataset... (estimated time: 5-15 min)"
 STEP2_START_TIME=$(date +%s)
 python3 create_dataset.py
 STEP2_END_TIME=$(date +%s)
@@ -65,7 +68,7 @@ STEP2_DURATION=$((STEP2_END_TIME - STEP2_START_TIME))
 echo "✅ Dataset creation completed in $((STEP2_DURATION / 60)) min $((STEP2_DURATION % 60)) sec"
 
 # Step 3: Run the training with the preprocessed dataset
-echo "\n🧠 Step 3/3: Training Llama 3 model... (estimated time: 30-120 min)"
+echo "\n🧠 Step 3/3: Training $MODEL_NAME model... (estimated time: 30-120 min)"
 STEP3_START_TIME=$(date +%s)
 python3 train.py \
     --model_name $MODEL_NAME \

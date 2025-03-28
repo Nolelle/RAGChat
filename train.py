@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_name",
         type=str,
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
+        default="microsoft/Phi-4-mini-instruct",
         help="Base model to use",
     )
     parser.add_argument(
@@ -261,17 +261,7 @@ def main():
 
     # Load the dataset - expecting it to be preprocessed for Llama 3 already
     logger.info(f"Loading dataset from {args.dataset_path}")
-    if args.dataset_path.endswith(".json"):
-        dataset = load_dataset("json", data_files=args.dataset_path)
-    elif args.dataset_path.endswith(".csv"):
-        dataset = load_dataset("csv", data_files=args.dataset_path)
-    else:
-        try:
-            # Try to load as a HuggingFace dataset
-            dataset = load_dataset(args.dataset_path)
-        except Exception as e:
-            logger.error(f"Failed to load dataset: {e}")
-            raise
+    dataset = load_dataset("json", data_files=args.dataset_path, field="train")
 
     # Check if the dataset has a 'train' split
     if "train" in dataset:

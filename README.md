@@ -19,9 +19,9 @@ A RAG-based chatbot for firefighters and first responders, optimized for Apple S
 
 ## Key Features
 
-1. **Llama 3 8B Instruct Model**:
-   - High-quality instruction-following capabilities
-   - Excellent context understanding and response accuracy
+1. **Phi-4-mini-instruct Model**:
+   - Lightweight, high-performance open model from Microsoft
+   - Strong reasoning and instruction-following capabilities
    - Optimized specifically for first responder domain knowledge
 
 2. **RAG (Retrieval Augmented Generation)**: Uses your organization's protocol documents
@@ -70,7 +70,7 @@ The FirstRespondersChatbot consists of three main subsystems:
 ### Prerequisites
 
 - Python 3.12+
-- Hugging Face account with access to Llama models
+- Hugging Face account (for downloading models)
 - PyTorch with MPS support (for Apple Silicon)
 - Node.js 18+ (for frontend)
 
@@ -96,10 +96,10 @@ The FirstRespondersChatbot consists of three main subsystems:
    pip install -e .
    ```
 
-4. Set up Hugging Face token (for accessing Llama models):
+4. Set up Hugging Face token (recommended for rate limits, optional for Phi-4-mini):
 
    ```bash
-   python setup_token.py
+   huggingface-cli login
    ```
 
 5. Set up the frontend:
@@ -115,7 +115,7 @@ The FirstRespondersChatbot consists of three main subsystems:
 
 ### Training
 
-1. Place your training documents in the `docs/` directory.
+1. Place your training documents in the `training-docs/` directory (corrected from `docs/`).
 
 2. Run the training script:
 
@@ -125,16 +125,16 @@ The FirstRespondersChatbot consists of three main subsystems:
 
    This script will:
    - Preprocess documents and create chunks
-   - Generate a training dataset with Llama 3 formatting
-   - Fine-tune Llama 3 8B Instruct model with LoRA
-   - Save the trained model to `trained-models/llama3-first-responder`
+   - Generate a training dataset (compatible format)
+   - Fine-tune the Phi-4-mini-instruct model with LoRA
+   - Save the trained model to `trained-models/phi4-mini-first-responder`
 
 ### Running the Chatbot
 
 Start the server:
 
 ```bash
-python server.py --model trained-models/llama3-first-responder
+python server.py --model trained-models/phi4-mini-first-responder
 ```
 
 Access the web interface:
@@ -150,7 +150,7 @@ First, preprocess your first responder documents:
 python preprocess.py --docs-dir ./docs --output-dir ./data
 ```
 
-Then create a training dataset formatted for Llama 3:
+Then create a training dataset:
 
 ```bash
 python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
@@ -159,13 +159,13 @@ python create_dataset.py --input-file ./data/preprocessed_data.json --output-fil
 ### Training Command
 
 ```bash
-# Train with Llama 3 8B Instruct
-python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder
+# Train with Phi-4-mini-instruct
+python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder
 ```
 
 ### Key Training Parameters
 
-- `--model_name`: Base model to fine-tune (meta-llama/Meta-Llama-3-8B-Instruct)
+- `--model_name`: Base model to fine-tune (microsoft/Phi-4-mini-instruct)
 - `--output_dir`: Directory to save the trained model
 - `--batch_size`: Batch size for training (default: 1)
 - `--gradient_accumulation_steps`: Steps to accumulate gradients (default: 32 for MPS, 16 for others)
@@ -179,18 +179,18 @@ python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir ll
 #### Apple Silicon (M1/M2/M3/M4)
 
 ```bash
-# For Llama 3 8B (uses our optimized script)
+# For Phi-4-mini (uses our optimized script)
 ./run_training_apple_silicon.sh
 
-# Manual configuration for Llama 3
-python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
+# Manual configuration for Phi-4-mini
+python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
 ```
 
 #### NVIDIA GPUs
 
 ```bash
-# For Llama 3 8B
-python train.py --model_name meta-llama/Meta-Llama-3-8B-Instruct --output_dir llama3-first-responder --fp16 --load_in_4bit
+# For Phi-4-mini
+python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --fp16
 ```
 
 ## API Reference
