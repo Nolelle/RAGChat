@@ -35,9 +35,9 @@ app = typer.Typer()
 class ChatbotCLI:
     """Command-line interface for the FirstRespondersChatbot."""
 
-    def __init__(self, model_dir: str = "phi3-medium-first-responder"):
+    def __init__(self, model_dir: str = "trained-models"):
         """
-        Initialize the chatbot CLI with Phi-3 Medium.
+        Initialize the chatbot CLI with Phi-4 mini.
         """
         self.model_dir = Path(model_dir)
         try:
@@ -117,7 +117,7 @@ class ChatbotCLI:
     def _load_model_with_adapter(self, device, quantization_config):
         """Load model with adapter if available, or full model, or fallback to base model."""
         console.print("Loading model from", self.model_dir)
-        model_path = "microsoft/phi-3-medium-4k-instruct"
+        model_path = "microsoft/Phi-4-mini-instruct"
 
         # Try loading with adapter first
         try:
@@ -171,7 +171,7 @@ class ChatbotCLI:
 
         except Exception as e:
             console.print(f"[bold yellow]Warning:[/bold yellow] {str(e)}")
-            console.print("Falling back to base Phi-3 Medium model")
+            console.print("Falling back to base Phi-4 mini model")
 
             # Load base model as fallback
             model = AutoModelForCausalLM.from_pretrained(

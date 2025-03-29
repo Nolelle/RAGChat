@@ -21,9 +21,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add the project root to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 # Import the trainer module
 try:
     from src.firstresponders_chatbot.training.trainer import ModelTrainer

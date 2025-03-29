@@ -27,12 +27,6 @@ def main():
         "--debug", action="store_true", help="Run the server in debug mode"
     )
     parser.add_argument(
-        "--model-name",
-        type=str,
-        default="meta-llama/Llama-2-7b-chat-hf",
-        help="Name or path of the model to use",
-    )
-    parser.add_argument(
         "--document-store-dir",
         type=str,
         default="uploads",
@@ -51,7 +45,7 @@ def main():
 
     # Initialize RAG system
     rag_system = RAGSystem(
-        model_name_or_path=args.model_name,
+        model_name_or_path="trained-models",
         document_store_dir=args.document_store_dir,
         top_k=args.top_k,
         use_mps=args.use_mps,

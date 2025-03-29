@@ -29,8 +29,8 @@ echo "✅ Set environment variables for optimal Apple Silicon performance"
 # Set model parameters for Phi-4-mini on Apple Silicon
 MODEL_NAME="microsoft/Phi-4-mini-instruct"
 OUTPUT_DIR="trained-models/phi4-mini-first-responder"
-MAX_SEQ_LENGTH=2048
-GRAD_ACCUM_STEPS=32
+MAX_SEQ_LENGTH=512
+GRAD_ACCUM_STEPS=16
 LEARNING_RATE=1e-4
 BATCH_SIZE=1
 EPOCHS=2

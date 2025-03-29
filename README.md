@@ -134,11 +134,22 @@ The FirstRespondersChatbot consists of three main subsystems:
 Start the server:
 
 ```bash
-python server.py --model trained-models/phi4-mini-first-responder
+# Run the server using the module execution pattern
+python -m src.firstresponders_chatbot.rag.run_server
 ```
 
 Access the web interface:
 - Open your browser to http://localhost:8000
+
+Use the Command-Line Interface (CLI):
+
+```bash
+# Start an interactive chat session
+python -m src.firstresponders_chatbot.cli.cli chat
+
+# Ask a single question
+python -m src.firstresponders_chatbot.cli.cli query "Your question here?"
+```
 
 ## Training Guide
 
@@ -147,20 +158,23 @@ Access the web interface:
 First, preprocess your first responder documents:
 
 ```bash
-python preprocess.py --docs-dir ./docs --output-dir ./data
+# Use module execution for preprocessing
+python -m preprocess --docs-dir ./docs --output-dir ./data
 ```
 
 Then create a training dataset:
 
 ```bash
-python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
+# Use module execution for dataset creation
+python -m create_dataset --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
 ```
 
 ### Training Command
 
 ```bash
-# Train with Phi-4-mini-instruct
-python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder
+# Use module execution for training
+# Example: Train with Phi-4-mini-instruct
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder
 ```
 
 ### Key Training Parameters
@@ -182,15 +196,15 @@ python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-min
 # For Phi-4-mini (uses our optimized script)
 ./run_training_apple_silicon.sh
 
-# Manual configuration for Phi-4-mini
-python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
+# Manual configuration for Phi-4-mini (using module execution)
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
 ```
 
 #### NVIDIA GPUs
 
 ```bash
-# For Phi-4-mini
-python train.py --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --fp16
+# For Phi-4-mini (using module execution)
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --fp16
 ```
 
 ## API Reference
@@ -335,21 +349,44 @@ const sendQuery = async (query) => {
 
 ## Project Structure
 
-- `src/firstresponders_chatbot/`: Main package
-  - `preprocessing/`: Document preprocessing
-  - `training/`: Model training
-  - `rag/`: RAG implementation
-  - `cli/`: Command-line interface
-  - `utils/`: Utility functions
-- `frontend/`: React web interface
-- `docs/`: Place for your first responder documents
-- `data/`: Processed data and datasets
-- `trained-models/`: Saved model checkpoints
-- `server.py`: Main server script
-- `preprocess.py`: Document preprocessing script
-- `create_dataset.py`: Dataset creation script
-- `train.py`: Model training script
-- `run_training_apple_silicon.sh`: End-to-end training script
+```
+firstresponders-chatbot/
+├── frontend/             # React frontend code
+├── src/                  # Main Python package
+│   └── firstresponders_chatbot/
+│       ├── cli/          # Command Line Interface
+│       │   └── cli.py
+│       ├── preprocessing/# Document preprocessing
+│       │   └── preprocessor.py
+│       ├── rag/          # RAG system (retrieval, server, etc.)
+│       │   ├── rag_system.py
+│       │   └── run_server.py # Server entry point (run with python -m)
+│       │   └── server.py     # FastAPI server logic
+│       └── training/     # Model training pipeline
+│           ├── dataset_creator.py
+│           └── trainer.py
+├── trained-models/       # Saved fine-tuned models
+├── training-docs/        # Source documents for training
+├── data/                 # Processed data and datasets
+├── uploads/              # Uploaded documents for RAG
+├── create_dataset.py     # Script entry point (run with python -m)
+├── main.py               # Potentially old/unused entry point
+├── pdf_test.py           # Test script
+├── preprocess.py         # Script entry point (run with python -m)
+├── pyproject.toml        # Project configuration and dependencies
+├── README.md             # This file
+├── run_training_apple_silicon.sh # Training script
+├── setup_token.py        # Hugging Face token setup utility
+└── train.py              # Script entry point (run with python -m)
+```
+
+### Key Components
+
+- `src/firstresponders_chatbot/rag/run_server.py`: Entry point for the RAG server (run with `python -m`).
+- `src/firstresponders_chatbot/cli/cli.py`: Entry point for the CLI (run with `python -m`).
+- `train.py`: Main training script (run with `python -m`).
+- `preprocess.py`, `create_dataset.py`: Data preparation scripts (run with `python -m`).
+- `frontend/`: React-based user interface.
 
 ## Apple Silicon Optimization
 

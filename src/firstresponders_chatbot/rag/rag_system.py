@@ -41,7 +41,7 @@ class RAGSystem:
 
     def __init__(
         self,
-        model_name_or_path: str = "meta-llama/Llama-2-7b-chat-hf",
+        model_name_or_path: str = "trained-models",
         device: str = None,
         document_store_dir: str = "uploads",
         use_mps: bool = True,
@@ -52,7 +52,7 @@ class RAGSystem:
         Initialize the RAG system.
 
         Args:
-            model_name_or_path: Path to the fine-tuned model or HF model name
+            model_name_or_path: Path to the fine-tuned model or HF model name (e.g., 'trained-models' or 'microsoft/Phi-4-mini-instruct')
             device: Device to use for model inference
             document_store_dir: Directory for the document store
             use_mps: Whether to use MPS (Apple Silicon) when available
@@ -93,9 +93,9 @@ class RAGSystem:
             return torch.device("cpu")
 
     def _init_model_and_tokenizer(self):
-        """Initialize the Llama 2 model and tokenizer."""
+        """Initialize the Phi-4 mini model and tokenizer."""
         try:
-            logger.info(f"Loading Llama 2 model: {self.model_name}")
+            logger.info(f"Loading model: {self.model_name}")
 
             # Configure model loading
             torch_dtype = (
@@ -136,11 +136,11 @@ class RAGSystem:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
-            logger.info(f"Successfully loaded Llama 2 model and tokenizer")
+            logger.info(f"Successfully loaded model and tokenizer")
 
         except Exception as e:
-            logger.error(f"Error initializing Llama 2 model: {str(e)}")
-            raise RuntimeError(f"Failed to load Llama 2 model: {str(e)}")
+            logger.error(f"Error initializing model: {str(e)}")
+            raise RuntimeError(f"Failed to load model: {str(e)}")
 
     def _init_rag_components(self):
         """Initialize RAG components."""
@@ -1402,31 +1402,20 @@ class RAGSystem:
         return context_str
 
     def _create_prompt_with_context(self, query: str, context_str: str) -> str:
-        """Create a prompt with context for the Llama 2 model."""
-        # Llama 2 prompt format with improved instructions
-        system_message = """You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.
-
-Guidelines:
-1. Answer questions based on your training, being accurate and precise.
-2. Organize your responses with clear structure using headings and lists where appropriate.
-3. Be honest about your limitations - if you're uncertain, clearly state that.
-4. Avoid making up specific statistics or data you don't have access to.
-5. Focus on providing practical, actionable information when possible.
-6. Explain concepts thoroughly but concisely.
-7. Use professional terminology appropriate for first responder contexts.
-8. Prioritize safety information in your responses."""
-
-        # Add notice about document issues if requested
-        user_message = query
-        if document_issue_notice:
-            user_message = (
-                "Note: There were issues processing the uploaded documents. I'll answer based on my general knowledge instead. If I don't have enough information, I'll let you know.\n\n"
-                + user_message
-            )
-
-        # Llama 2 chat format
-        prompt = (
-            f"<s>[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n{user_message} [/INST]"
+        """Create a properly formatted prompt for Phi-4 with context."""
+        # Phi-4 prompt format adapted for RAG
+        context_section = (
+            f"<|context|>{context_str}<|endofcontext|>\n\n" if context_str else ""
         )
-
-        return prompt
+        return (
+            f"<|system|>\n"
+            f"You are a knowledgeable first responder assistant. Use the provided context to answer the question accurately. "
+            f"If the context doesn't contain the answer, state that clearly.\n"
+            f"Guidelines:\n"
+            f"1. Base answers strictly on the provided context.\n"
+            f"2. Be concise and precise.\n"
+            f"3. If unsure or the answer isn't in the context, say so.\n"
+            f"4. Prioritize safety information.\n"
+            f"{context_section}"
+            f"<|user|>\n{query}\n<|assistant|>"
+        )
