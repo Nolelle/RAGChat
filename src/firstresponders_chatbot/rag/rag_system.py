@@ -8,11 +8,14 @@ responses using the fine-tuned Llama 2 model.
 
 import logging
 import os
+import math
+import random
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import json
 import uuid
 from collections import defaultdict
+import re
 
 import torch
 from transformers import AutoTokenizer, BitsAndBytesConfig, AutoModelForCausalLM
@@ -135,6 +138,9 @@ class RAGSystem:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
+            # Log the chat template associated with the tokenizer
+            logger.info(f"Tokenizer chat template: {self.tokenizer.chat_template}")
+
             logger.info(f"Successfully loaded model and tokenizer")
 
         except Exception as e:
@@ -206,11 +212,14 @@ class RAGSystem:
         if not text or len(text) < 20:
             return False
 
+        # For debugging: Log what we're checking
+        debug_prefix = "MODEL OUTPUT" if is_model_output else "DOCUMENT TEXT"
+        logger.debug(f"DEBUG: {debug_prefix} GARBLED CHECK - Length: {len(text)}")
+        logger.debug(f"DEBUG: {debug_prefix} GARBLED CHECK - Preview: {text[:100]}...")
+
         # For model output, do a quick check for reasonable text
         if is_model_output:
             # If it contains common words and reasonable sentence structure, it's likely fine
-            import re
-
             common_words = [
                 "the",
                 "and",
@@ -228,6 +237,10 @@ class RAGSystem:
                 1 for word in common_words if f" {word} " in f" {text} ".lower()
             )
 
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Common words found: {common_words_count}"
+            )
+
             # If it has several common words, it's probably not garbled
             if common_words_count >= 3:
                 # Also check for proper punctuation and sentence structure
@@ -238,20 +251,38 @@ class RAGSystem:
                     if len(s.strip()) > 10 and s.strip()[0].isupper()
                 )
 
+                logger.debug(
+                    f"DEBUG: {debug_prefix} GARBLED CHECK - Proper sentences found: {proper_sentences}/{len(sentences)}"
+                )
+
                 # If we have proper sentences, consider it valid
                 if proper_sentences >= 1:
+                    logger.debug(
+                        f"DEBUG: {debug_prefix} GARBLED CHECK - Text passes common word and sentence structure checks"
+                    )
                     return False
 
         # Check for high percentage of non-ASCII characters (potential encoding issues)
         non_ascii_count = sum(1 for c in text if ord(c) > 127)
+        non_ascii_percent = non_ascii_count / len(text) if len(text) > 0 else 0
         ascii_threshold = (
             0.3 if not is_model_output else 0.4
         )  # Less strict for model output
-        if len(text) > 0 and non_ascii_count / len(text) > ascii_threshold:
+
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Non-ASCII chars: {non_ascii_count}/{len(text)} ({non_ascii_percent*100:.2f}%)"
+        )
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - ASCII threshold: {ascii_threshold*100:.2f}%"
+        )
+
+        if len(text) > 0 and non_ascii_percent > ascii_threshold:
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Failed ASCII check: Too many non-ASCII characters"
+            )
             return True
 
         # Check for unusual character distribution (Shannon entropy)
-        import math
         from collections import Counter
 
         # Calculate character frequency
@@ -270,25 +301,63 @@ class RAGSystem:
         entropy_threshold = (
             5.5 if not is_model_output else 6.0
         )  # Higher threshold for model output
+
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Text entropy: {entropy:.2f}"
+        )
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Entropy threshold: {entropy_threshold:.2f}"
+        )
+
         if entropy > entropy_threshold:
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Failed entropy check: Entropy too high"
+            )
             return True
 
         # Check for unusual character sequences (random distribution of special chars)
-        import re
-
         # Look for sequences like "iaIAs" or "síaà" that are unlikely in normal text
         unusual_pattern = r"([^\w\s]{3,}|([a-zA-Z][^a-zA-Z]){4,})"  # Reduced sequence length requirements
+        unusual_sequences = re.findall(unusual_pattern, text)
+
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Unusual sequences found: {len(unusual_sequences)}"
+        )
+        if unusual_sequences:
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Examples of unusual sequences: {unusual_sequences[:3]}"
+            )
+
         if re.search(unusual_pattern, text):
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Failed pattern check: Unusual character sequences found"
+            )
             return True
 
         # Additional check for concatenated words without spaces (common in bad PDF extraction)
         words_without_spaces = re.findall(r"[a-zA-Z]{20,}", text)
-        if (
-            words_without_spaces
-            and len("".join(words_without_spaces)) / len(text) > 0.2
-        ):
+        words_without_spaces_percent = (
+            len("".join(words_without_spaces)) / len(text) if len(text) > 0 else 0
+        )
+
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Long words without spaces: {len(words_without_spaces)}"
+        )
+        if words_without_spaces:
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Examples of words without spaces: {words_without_spaces[:3]}"
+            )
+        logger.debug(
+            f"DEBUG: {debug_prefix} GARBLED CHECK - Words without spaces percentage: {words_without_spaces_percent*100:.2f}%"
+        )
+
+        if words_without_spaces and words_without_spaces_percent > 0.2:
+            logger.debug(
+                f"DEBUG: {debug_prefix} GARBLED CHECK - Failed spaces check: Too many concatenated words"
+            )
             return True
 
+        logger.debug(f"DEBUG: {debug_prefix} GARBLED CHECK - Text passed all checks")
         return False
 
     def process_file(self, file_path: str) -> List[Document]:
@@ -475,8 +544,6 @@ class RAGSystem:
                     logger.warning(f"Detected likely garbled text in document chunk")
 
                 # Clean content - enhanced cleaning procedure
-                import re
-
                 # First, clean control characters
                 content = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "", content)
                 content = content.replace("\ufeff", "")  # Zero-width no-break space
@@ -1040,6 +1107,66 @@ class RAGSystem:
             logger.exception("Full traceback:")
             return []
 
+    def _clean_model_output(self, answer: str) -> str:
+        """
+        Clean and improve model output to fix common issues.
+
+        Args:
+            answer: Raw model output to clean
+
+        Returns:
+            Cleaned and improved answer
+        """
+        if not answer or len(answer.strip()) < 10:
+            logger.warning("Answer too short or empty, returning generic response")
+            return "I apologize, but I'm having trouble generating a detailed response. Please try asking your question differently."
+
+        # Trim any trailing incomplete sentences or words
+        sentences = re.split(r"(?<=[.!?])\s+", answer)
+        if len(sentences) > 1:
+            # Check if the last sentence doesn't end with punctuation
+            # and is significantly shorter than average
+            avg_sentence_len = sum(len(s) for s in sentences[:-1]) / (
+                len(sentences) - 1
+            )
+            last_sentence = sentences[-1]
+            if (
+                not re.search(r"[.!?]$", last_sentence)
+                and len(last_sentence) < avg_sentence_len * 0.6
+                and len(last_sentence) < 30
+            ):
+                logger.info(f"Trimming incomplete last sentence: '{last_sentence}'")
+                answer = " ".join(sentences[:-1])
+
+        # Fix common formatting issues
+        answer = re.sub(r"\n{3,}", "\n\n", answer)  # Replace 3+ newlines with 2
+        answer = re.sub(r"[ \t]+", " ", answer)  # Normalize spaces/tabs
+
+        # Fix list item formatting (make sure there's a space after list markers)
+        answer = re.sub(r"(\d+\.|\*|-)(\S)", r"\1 \2", answer)
+
+        # Add a period at the end if missing
+        if answer and not re.search(r"[.!?]$", answer.strip()):
+            answer = answer.strip() + "."
+
+        # Avoid partial sentences by making sure we end with a proper sentence
+        if not answer.endswith((".", "!", "?")) and not answer.endswith(
+            (".\n", "!\n", "?\n")
+        ):
+            # Check if there appears to be a partial sentence at the end
+            if len(answer) > 20 and " " in answer[-20:]:
+                # Find the last sentence boundary
+                last_period = max(
+                    answer.rfind("."), answer.rfind("!"), answer.rfind("?")
+                )
+                if last_period != -1 and last_period > len(answer) * 0.5:
+                    logger.info(
+                        f"Trimming partial sentence at end, cut at position {last_period+1}"
+                    )
+                    answer = answer[: last_period + 1]
+
+        return answer.strip()
+
     def generate_response(
         self,
         query: str,
@@ -1063,8 +1190,6 @@ class RAGSystem:
             )
 
             # Check if query is asking for specific data that needs documents
-            import re
-
             specific_data_patterns = [
                 # General statistics and data patterns
                 r"percentage",
@@ -1260,11 +1385,107 @@ class RAGSystem:
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
 
-            # Decode the output
-            full_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            # Try both decoding approaches: with and without special tokens
+            full_output_with_special = self.tokenizer.decode(
+                outputs[0], skip_special_tokens=False
+            )
+            full_output_no_special = self.tokenizer.decode(
+                outputs[0], skip_special_tokens=True
+            )
 
-            # Extract just the assistant's response
-            answer = self._extract_answer_from_output(full_output, prompt)
+            # Debug log the raw outputs with special tokens visible
+            logger.info("================ RAW MODEL OUTPUT ================")
+            logger.info(
+                f"Output length (with special tokens): {len(full_output_with_special)} chars"
+            )
+            logger.info(
+                f"Output length (no special tokens): {len(full_output_no_special)} chars"
+            )
+
+            # Log if common markers are found
+            markers = ["<|assistant|>", "<|end|>", "<|endoftext|>", " { "]
+            for marker in markers:
+                if marker in full_output_with_special:
+                    logger.info(
+                        f"Found marker '{marker}' at position {full_output_with_special.find(marker)}"
+                    )
+
+            # Log a truncated version of the outputs if they're very long
+            if len(full_output_with_special) > 1000:
+                logger.info(
+                    f"Raw output with special tokens (first 500 chars): {full_output_with_special[:500]}"
+                )
+                logger.info(
+                    f"Raw output with special tokens (last 500 chars): {full_output_with_special[-500:]}"
+                )
+            else:
+                logger.info(
+                    f"Raw output with special tokens: {full_output_with_special}"
+                )
+
+            logger.info(
+                f"Raw output without special tokens: {full_output_no_special[:500]}"
+            )
+            logger.info("=================================================")
+
+            # First try to extract from the output with special tokens
+            answer = self._extract_answer_from_output(full_output_with_special, prompt)
+
+            # If the answer seems garbled or empty, try the version without special tokens
+            if not answer or self._detect_garbled_text(answer, is_model_output=True):
+                logger.info(
+                    "Extraction from output with special tokens failed, trying without special tokens"
+                )
+                # For the no-special-tokens version, we'll need to manually extract after the prompt
+                # Since we don't have markers to help us
+                if prompt in full_output_no_special:
+                    alt_answer = full_output_no_special.split(prompt, 1)[1].strip()
+                else:
+                    # If prompt not found, just use the whole output
+                    alt_answer = full_output_no_special
+
+                # If the alternative answer is substantially better, use it
+                if alt_answer and len(alt_answer) > len(answer) * 2:
+                    logger.info("Using output without special tokens instead")
+                    answer = alt_answer
+
+            # Clean and post-process the answer
+            answer = self._clean_model_output(answer)
+
+            # Special check for knowledge-only responses with line breaking issues
+            if (
+                answer.count("\n") > answer.count(".") * 0.7
+            ):  # Many newlines relative to sentences
+                logger.info(
+                    "Detected excessive line breaks in knowledge-only response, applying extra formatting"
+                )
+
+                # More aggressive newline removal for knowledge-only mode
+                answer = re.sub(r"\n+", " ", answer)  # Replace all newlines with spaces
+                answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
+
+                # Re-introduce paragraph breaks at proper sentence boundaries
+                sentences = re.split(r"(?<=[.!?])\s+", answer)
+                paragraphs = []
+                current_para = []
+
+                for sentence in sentences:
+                    if not sentence.strip():
+                        continue
+
+                    current_para.append(sentence)
+                    # Start new paragraph every 2-3 sentences
+                    if len(current_para) >= 2 and random.random() < 0.4:
+                        paragraphs.append(" ".join(current_para))
+                        current_para = []
+
+                # Add any remaining sentences
+                if current_para:
+                    paragraphs.append(" ".join(current_para))
+
+                # Join paragraphs with newlines
+                answer = "\n\n".join(paragraphs)
+                logger.info(f"Reformatted response into {len(paragraphs)} paragraphs")
 
             # Check if the answer appears garbled
             if self._detect_garbled_text(answer, is_model_output=True):
@@ -1289,22 +1510,76 @@ class RAGSystem:
                     )
 
                 simpler_output = self.tokenizer.decode(
-                    simpler_outputs[0], skip_special_tokens=True
+                    simpler_outputs[0], skip_special_tokens=False
                 )
                 answer = self._extract_answer_from_output(
                     simpler_output, simpler_prompt
                 )
 
+                # Clean and post-process the answer
+                answer = self._clean_model_output(answer)
+
                 # If still garbled, use a generic response
                 if self._detect_garbled_text(answer, is_model_output=True):
                     answer = "I apologize, but I'm having trouble generating a clear response. Please try reformulating your question."
 
+                # Additional fallback for outputs that are just dots, colons, or special characters
+                # This handles the case of ":::::......::::" or similar patterns
+                if answer:
+                    # Check if the answer is mostly special characters or repeated punctuation
+                    special_chars = sum(1 for c in answer if c in ".:;,?!-_")
+                    if (
+                        special_chars / len(answer) > 0.7
+                    ):  # If more than 70% are special chars
+                        logger.warning(
+                            "Answer consists mostly of special characters or punctuation, using fallback"
+                        )
+
+                        # Try one more time with an even simpler prompt
+                        basic_prompt = f"<|system|>\nYou are a helpful first responder assistant. Answer this question in a simple, direct way: {query}\n<|user|>\n{query}\n<|assistant|>"
+
+                        try:
+                            basic_inputs = self.tokenizer(
+                                basic_prompt, return_tensors="pt"
+                            ).to(self.device)
+                            with torch.no_grad():
+                                basic_outputs = self.model.generate(
+                                    **basic_inputs,
+                                    max_new_tokens=200,
+                                    temperature=0.3,  # Lower temperature for more deterministic output
+                                    top_p=0.8,
+                                    top_k=40,
+                                    repetition_penalty=1.3,
+                                    do_sample=True,
+                                    pad_token_id=self.tokenizer.pad_token_id,
+                                )
+
+                            basic_output = self.tokenizer.decode(
+                                basic_outputs[0], skip_special_tokens=True
+                            )
+
+                            # Remove the prompt part manually if it's present
+                            if basic_prompt in basic_output:
+                                basic_answer = basic_output.split(basic_prompt, 1)[
+                                    1
+                                ].strip()
+                            else:
+                                basic_answer = basic_output.strip()
+
+                            # If we got a reasonable answer, use it
+                            if basic_answer and len(basic_answer) > 20:
+                                answer = basic_answer
+                            else:
+                                answer = "I apologize, but I'm having trouble generating a response. Please try rephrasing your question."
+
+                        except Exception as e:
+                            logger.error(
+                                f"Error in basic fallback generation: {str(e)}"
+                            )
+                            answer = "I apologize, but I'm experiencing technical difficulties. Please try again later."
+
             # Provide detailed context information and ensure proper source attribution
             context_metadata = self._prepare_context_metadata(context_docs)
-
-            # Add "Generated by Llama 2 Model" to each answer for attribution
-            if not answer.endswith("[Generated by Llama 2 Model]"):
-                answer += "\n\n[Generated by Llama 2 Model]"
 
             return {
                 "query": query,
@@ -1317,11 +1592,180 @@ class RAGSystem:
             logger.exception("Full traceback:")
             return {
                 "query": query,
-                "answer": "I apologize, but I'm having trouble processing your request. Please try again or rephrase your question.",
+                "answer": "I apologize, but an internal error occurred while processing your request. Please try again or rephrase your question.",
                 "context": [
                     {
-                        "source": "Error (no documents available)",
+                        "source": "Internal Error",
                         "content": "An error occurred while processing your request.",
+                        "file_name": "Error",
+                    }
+                ],
+            }
+
+    def generate_from_knowledge(
+        self, query: str, document_issue_notice: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Generate a response using only the model's internal knowledge.
+        Used when no relevant context is found or documents have issues.
+
+        Args:
+            query: The user's query
+            document_issue_notice: If True, add a notice about document issues.
+
+        Returns:
+            Dict containing the response and context information (indicating no context used).
+        """
+        try:
+            logger.info(
+                f"Generating response for query '{query}' using model knowledge only."
+            )
+
+            # Manually create prompt without context
+            system_message = "You are a knowledgeable first responder assistant. Answer the question based on your general knowledge."
+            if document_issue_notice:
+                system_message += "\nNote: There were issues reading provided documents, so this answer is based on general knowledge."
+
+            # Add specific instruction about formatting to prevent fragmented responses
+            system_message += "\nPlease provide a clear, complete answer in full sentences and well-structured paragraphs. Avoid excessive line breaks or fragments."
+
+            prompt = f"<|system|>\n{system_message}\n<|user|>\n{query}\n<|assistant|>"
+
+            # Tokenize
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            token_count = len(inputs["input_ids"][0])
+            logger.info(f"Knowledge-only prompt token count: {token_count}")
+
+            # Generate with adjusted parameters to reduce text fragmentation
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=400,
+                    min_new_tokens=50,
+                    temperature=0.6,
+                    top_p=0.9,
+                    repetition_penalty=1.1,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+
+            # Decode with both approaches
+            full_output_with_special = self.tokenizer.decode(
+                outputs[0], skip_special_tokens=False
+            )
+            full_output_no_special = self.tokenizer.decode(
+                outputs[0], skip_special_tokens=True
+            )
+
+            # Debug log the raw output with special tokens visible
+            logger.info(
+                "================ RAW MODEL OUTPUT (KNOWLEDGE MODE) ================"
+            )
+            logger.info(f"Output length: {len(full_output_with_special)} chars")
+            # Log if common markers are found
+            markers = ["<|assistant|>", "<|end|>", "<|endoftext|>", "</s>"]
+            for marker in markers:
+                if marker in full_output_with_special:
+                    logger.info(
+                        f"Found marker '{marker}' at position {full_output_with_special.find(marker)}"
+                    )
+            # Log a truncated version of the output if it's very long
+            if len(full_output_with_special) > 1000:
+                logger.info(
+                    f"Raw output (first 500 chars): {full_output_with_special[:500]}"
+                )
+                logger.info(
+                    f"Raw output (last 500 chars): {full_output_with_special[-500:]}"
+                )
+            else:
+                logger.info(f"Raw output: {full_output_with_special}")
+            logger.info(
+                "================================================================="
+            )
+
+            # First try to extract from output with special tokens
+            answer = self._extract_answer_from_output(full_output_with_special, prompt)
+
+            # If the extracted answer seems problematic, try the version without special tokens
+            if (
+                not answer
+                or len(answer.strip()) < 20
+                or answer.count("\n") > answer.count(".")
+            ):
+                logger.info("Trying alternative extraction without special tokens")
+                # Get everything after the prompt
+                if prompt in full_output_no_special:
+                    alt_answer = full_output_no_special.split(prompt, 1)[1].strip()
+                else:
+                    alt_answer = full_output_no_special
+
+                # If alternative answer seems better, use it
+                if len(alt_answer) > len(answer):
+                    logger.info(
+                        "Using no-special-tokens extraction as it produced more content"
+                    )
+                    answer = alt_answer
+
+            # Clean and post-process the answer
+            answer = self._clean_model_output(answer)
+
+            # Special check for knowledge-only responses with line breaking issues
+            if (
+                answer.count("\n") > answer.count(".") * 0.7
+            ):  # Many newlines relative to sentences
+                logger.info(
+                    "Detected excessive line breaks in knowledge-only response, applying extra formatting"
+                )
+
+                # More aggressive newline removal for knowledge-only mode
+                answer = re.sub(r"\n+", " ", answer)  # Replace all newlines with spaces
+                answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
+
+                # Re-introduce paragraph breaks at proper sentence boundaries
+                sentences = re.split(r"(?<=[.!?])\s+", answer)
+                paragraphs = []
+                current_para = []
+
+                for sentence in sentences:
+                    if not sentence.strip():
+                        continue
+
+                    current_para.append(sentence)
+                    # Start new paragraph every 2-3 sentences
+                    if len(current_para) >= 2 and random.random() < 0.4:
+                        paragraphs.append(" ".join(current_para))
+                        current_para = []
+
+                # Add any remaining sentences
+                if current_para:
+                    paragraphs.append(" ".join(current_para))
+
+                # Join paragraphs with newlines
+                answer = "\n\n".join(paragraphs)
+                logger.info(f"Reformatted response into {len(paragraphs)} paragraphs")
+
+            return {
+                "query": query,
+                "answer": answer,
+                "context": [
+                    {
+                        "source": "Model Knowledge",
+                        "content": "No relevant documents were found or used for this response.",
+                        "file_name": "N/A",
+                    }
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error generating response from knowledge: {str(e)}")
+            logger.exception("Full traceback:")
+            # Return the generic error response structure but indicate the source of error
+            return {
+                "query": query,
+                "answer": "I apologize, but an internal error occurred while generating the response. Please try again.",
+                "context": [
+                    {
+                        "source": "Internal Error",
+                        "content": "An error occurred during response generation.",
                         "file_name": "Error",
                     }
                 ],
@@ -1349,9 +1793,6 @@ class RAGSystem:
 
                 # Apply more aggressive cleaning for inclusion in context
                 # Replace non-ASCII characters with spaces
-                import re
-
-                content = re.sub(r"[^\x20-\x7E]", " ", content)
                 # Remove excessive punctuation that might be encoding artifacts
                 content = re.sub(r"[^\w\s\.,;:!?()-]{2,}", " ", content)
                 # Add spaces between lowercase and uppercase letters to fix concatenated words
@@ -1401,20 +1842,173 @@ class RAGSystem:
         return context_str
 
     def _create_prompt_with_context(self, query: str, context_str: str) -> str:
-        """Create a properly formatted prompt for Phi-4 with context."""
-        # Phi-4 prompt format adapted for RAG
+        """Create a properly formatted prompt for Phi-4 with context using manual construction."""
+        system_message = (
+            "You are a knowledgeable first responder assistant. Use the provided context to answer the question accurately. "
+            "If the context doesn't contain the answer, state that clearly.\n"
+            "Guidelines:\n"
+            "1. Base answers strictly on the provided context.\n"
+            "2. Be concise and precise.\n"
+            "3. If unsure or the answer isn't in the context, say so.\n"
+            "4. Prioritize safety information."
+        )
+        # Ensure context string is correctly handled
         context_section = (
             f"<|context|>{context_str}<|endofcontext|>\n\n" if context_str else ""
         )
-        return (
-            f"<|system|>\n"
-            f"You are a knowledgeable first responder assistant. Use the provided context to answer the question accurately. "
-            f"If the context doesn't contain the answer, state that clearly.\n"
-            f"Guidelines:\n"
-            f"1. Base answers strictly on the provided context.\n"
-            f"2. Be concise and precise.\n"
-            f"3. If unsure or the answer isn't in the context, say so.\n"
-            f"4. Prioritize safety information.\n"
-            f"{context_section}"
+
+        # Manually construct the full prompt
+        prompt = (
+            f"<|system|>\n{system_message}\n{context_section}"
             f"<|user|>\n{query}\n<|assistant|>"
         )
+        return prompt
+
+    def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
+        """Extract just the assistant's response from the full output, primarily looking for the marker."""
+        assistant_marker = "<|assistant|>"
+        end_markers = ["<|end|>", "<|endoftext|>", "<|EOS|>", "</s>"]
+
+        # DEBUG: Log raw output characteristics
+        logger.info(f"DEBUG: Raw output length: {len(full_output)} characters")
+        logger.info(f"DEBUG: Raw output first 20 chars: '{full_output[:20]}'")
+        logger.info(f"DEBUG: Raw output last 20 chars: '{full_output[-20:]}'")
+        logger.info(
+            f"DEBUG: Assistant marker in output: {assistant_marker in full_output}"
+        )
+
+        for marker in end_markers:
+            logger.info(
+                f"DEBUG: End marker '{marker}' in output: {marker in full_output}"
+            )
+
+        # Log character distribution to check for potentially garbled text
+        non_ascii_chars = [c for c in full_output if ord(c) > 127]
+        logger.info(
+            f"DEBUG: Non-ASCII character count: {len(non_ascii_chars)}/{len(full_output)} ({len(non_ascii_chars)/len(full_output)*100:.2f}%)"
+        )
+        logger.info(f"DEBUG: Non-ASCII characters: {non_ascii_chars[:20]} ...")
+
+        # Primary method: Find the last occurrence of the assistant marker
+        last_marker_pos = full_output.rfind(assistant_marker)
+        if last_marker_pos != -1:
+            # Get everything after the assistant marker
+            response = full_output[last_marker_pos + len(assistant_marker) :].strip()
+            logger.info(f"DEBUG: Found assistant marker at position {last_marker_pos}")
+            logger.info(
+                f"DEBUG: Extract after marker (first 50 chars): '{response[:50]}'..."
+            )
+
+            # Remove any end markers
+            for end_marker in end_markers:
+                if end_marker in response:
+                    end_pos = response.find(end_marker)
+                    logger.info(
+                        f"DEBUG: Found end marker '{end_marker}' at position {end_pos} in extracted response"
+                    )
+                    response = response.split(end_marker)[0].strip()
+
+            # Check if the response is just EOS or empty
+            if response and response != self.tokenizer.eos_token:
+                # Early cleaning of response to handle excessive line breaks and colons
+                if response.startswith(":"):
+                    response = response.lstrip(":")
+                    logger.info("Removed leading colon from extracted response")
+
+                # Handle excessive newlines early
+                if response.count("\n\n") > 3:
+                    logger.info("Cleaning excessive newlines in extracted response")
+                    response = re.sub(r"\n{3,}", "\n\n", response)
+
+                logger.info("Extracted response using assistant marker.")
+                logger.info(
+                    f"DEBUG: Final extracted response (first 50 chars): '{response[:50]}'..."
+                )
+                return response
+            else:
+                logger.warning("Found assistant marker but response was empty or EOS.")
+                logger.info(
+                    f"DEBUG: Empty response after marker, response: '{response}'"
+                )
+
+        # Fallback 1: Try to extract between assistant marker and end markers
+        if assistant_marker in full_output:
+            # Split by assistant marker and take the last part
+            response_with_end = full_output.split(assistant_marker)[-1].strip()
+            logger.info(
+                f"DEBUG: Fallback 1 - response after splitting (first 50 chars): '{response_with_end[:50]}'..."
+            )
+
+            # Look for any end markers and split by the first one found
+            for end_marker in end_markers:
+                if end_marker in response_with_end:
+                    clean_response = response_with_end.split(end_marker)[0].strip()
+                    logger.info(
+                        f"DEBUG: Fallback 1 - found end marker '{end_marker}', response before marker: '{clean_response[:50]}'..."
+                    )
+                    if clean_response:
+                        logger.info(
+                            f"Extracted response using end marker: {end_marker}"
+                        )
+                        return clean_response
+
+        # Fallback 2: If marker method failed, try stripping the prompt (less reliable)
+        if full_output.startswith(prompt):
+            stripped_response = full_output[len(prompt) :].strip()
+            logger.info(
+                f"DEBUG: Fallback 2 - prompt-stripped response (first 50 chars): '{stripped_response[:50]}'..."
+            )
+
+            # Also check for end markers in the stripped response
+            for end_marker in end_markers:
+                if end_marker in stripped_response:
+                    end_pos = stripped_response.find(end_marker)
+                    logger.info(
+                        f"DEBUG: Fallback 2 - found end marker '{end_marker}' at position {end_pos}"
+                    )
+                    stripped_response = stripped_response.split(end_marker)[0].strip()
+
+            if stripped_response and stripped_response != self.tokenizer.eos_token:
+                logger.warning("Used prompt stripping as fallback for extraction.")
+                return stripped_response
+
+        # Fallback 3: The text between the prompt and first end marker
+        for end_marker in end_markers:
+            if end_marker in full_output and prompt in full_output:
+                potential_response = (
+                    full_output.split(prompt, 1)[1].split(end_marker)[0].strip()
+                )
+                logger.info(
+                    f"DEBUG: Fallback 3 - potential response with end marker '{end_marker}' (first 50 chars): '{potential_response[:50]}'..."
+                )
+
+                if (
+                    potential_response and len(potential_response) > 20
+                ):  # Ensure it's substantial
+                    logger.warning(
+                        "Used prompt-to-end marker extraction as last resort."
+                    )
+                    return potential_response
+
+        # If all methods fail, log detailed debugging info:
+        logger.error("Could not reliably extract assistant response from output.")
+        logger.error(f"Prompt used (approx): {prompt[:200]}...")
+        logger.error(f"Full model output: {full_output}")
+
+        # As absolute last resort, return whatever is there after removing known markers
+        cleaned_output = full_output
+        if assistant_marker in cleaned_output:
+            cleaned_output = cleaned_output.split(assistant_marker)[-1]
+        for end_marker in end_markers:
+            if end_marker in cleaned_output:
+                cleaned_output = cleaned_output.split(end_marker)[0]
+
+        cleaned_output = cleaned_output.strip()
+        if cleaned_output and len(cleaned_output) > 10:
+            logger.warning("Returning partially cleaned output as last resort.")
+            logger.info(
+                f"DEBUG: Last resort response (first 50 chars): '{cleaned_output[:50]}'..."
+            )
+            return cleaned_output
+
+        return "I apologize, but I encountered an issue generating a proper response. Please try rephrasing your question."

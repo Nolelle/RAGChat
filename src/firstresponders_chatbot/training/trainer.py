@@ -213,11 +213,15 @@ class ModelTrainer:
         logger.info(f"Formatting dataset for {self.model_name}")
 
         def format_prompt(question, answer):
-            """Format the prompt and response in Llama 3's expected format."""
+            """Format the prompt and response in the appropriate format for the model."""
             system_message = "You are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols."
 
-            # Format with Llama 3 chat template
-            formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
+            # Use Phi-4-specific chat template
+            if "phi" in self.model_name.lower():
+                formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
+            else:
+                # Default format for other models
+                formatted_text = f"<|system|>\n{system_message}\n<|user|>\n{question}\n<|assistant|>\n{answer}"
 
             return formatted_text
 
@@ -294,6 +298,27 @@ class ModelTrainer:
                     tokenizer.pad_token = tokenizer.eos_token
                 else:
                     tokenizer.add_special_tokens({"pad_token": "<pad>"})
+
+            # Explicitly handle Phi model tokenizers
+            if "phi" in self.model_name.lower():
+                logger.info("Configuring Phi-specific tokenizer settings")
+                if not tokenizer.chat_template:
+                    logger.warning(
+                        "No chat template found for Phi model, setting default template"
+                    )
+                    # Add a proper chat template for Phi models
+                    tokenizer.chat_template = (
+                        "{% if messages[0]['role'] == 'system' %}"
+                        "<|system|>\n{{ messages[0]['content'] }}\n"
+                        "{% endif %}"
+                        "{% for message in messages %}"
+                        "{% if message['role'] == 'user' %}"
+                        "<|user|>\n{{ message['content'] }}\n"
+                        "{% elif message['role'] == 'assistant' %}"
+                        "<|assistant|>\n{{ message['content'] }}"
+                        "{% endif %}"
+                        "{% endfor %}"
+                    )
 
             # Load model with appropriate settings
             if self.device.type == "mps":
@@ -375,6 +400,20 @@ class ModelTrainer:
             # Target the attention modules for Llama
             return ["q_proj", "k_proj", "v_proj", "o_proj"]
 
+        # Check if it's a Phi model
+        elif "phi" in self.model_name.lower():
+            logger.info("Detected Phi model, using Phi-specific target modules")
+            # Target modules for Phi models
+            return [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "dense",
+                "dense_h_to_4h",
+                "dense_4h_to_h",
+            ]
+
         # Generic approach for other models - find linear layers by partial name match
         target_modules = []
         module_types = [
@@ -400,7 +439,7 @@ class ModelTrainer:
 
         if not target_modules:
             # If no modules found, fall back to default targets for transformer models
-            logger.warning("No target modules found, using default targets for Llama")
+            logger.warning("No target modules found, using default targets")
             target_modules = ["q_proj", "v_proj"]
 
         return target_modules
@@ -466,6 +505,20 @@ class ModelTrainer:
                 ),  # Always pad for MPS
                 return_tensors=None,  # Return as lists, not tensors
             )
+
+            # For Phi models, ensure proper handling of special tokens
+            if "phi" in self.model_name.lower():
+                # Make sure we're not using tokens in an unexpected way
+                if hasattr(tokenizer, "eos_token_id"):
+                    logger.info(f"Using EOS token ID: {tokenizer.eos_token_id}")
+
+                # Verify special tokens are properly set
+                if (
+                    not hasattr(tokenizer, "pad_token_id")
+                    or tokenizer.pad_token_id is None
+                ):
+                    logger.info("Setting pad_token_id to eos_token_id for Phi model")
+                    tokenizer.pad_token_id = tokenizer.eos_token_id
 
             # Set labels to input_ids
             tokenized["labels"] = tokenized["input_ids"].copy()

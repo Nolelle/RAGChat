@@ -245,6 +245,9 @@ def main():
         logger.info("Apple Silicon detected - disabling 8-bit optimization")
         use_8bit = False
 
+        # Override load_in_4bit parameter when on MPS
+        args.load_in_4bit = False
+
         # Clear MPS cache before starting
         torch.mps.empty_cache()
 

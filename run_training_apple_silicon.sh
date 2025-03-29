@@ -54,7 +54,7 @@ TOTAL_START_TIME=$(date +%s)
 # Step 1: Run preprocessing
 echo "\n🔍 Step 1/3: Running document preprocessing... (estimated time: 3-10 min)"
 STEP1_START_TIME=$(date +%s)
-python3 preprocess.py --docs_dir training-docs
+python3 -m src.firstresponders_chatbot.preprocessing.preprocess --docs-dir training-docs
 STEP1_END_TIME=$(date +%s)
 STEP1_DURATION=$((STEP1_END_TIME - STEP1_START_TIME))
 echo "✅ Preprocessing completed in $((STEP1_DURATION / 60)) min $((STEP1_DURATION % 60)) sec"
@@ -62,7 +62,7 @@ echo "✅ Preprocessing completed in $((STEP1_DURATION / 60)) min $((STEP1_DURAT
 # Step 2: Create the dataset for the specified format (should be adaptable)
 echo "\n🧩 Step 2/3: Creating dataset... (estimated time: 5-15 min)"
 STEP2_START_TIME=$(date +%s)
-python3 create_dataset.py
+python3 -m src.firstresponders_chatbot.training.create_dataset
 STEP2_END_TIME=$(date +%s)
 STEP2_DURATION=$((STEP2_END_TIME - STEP2_START_TIME))
 echo "✅ Dataset creation completed in $((STEP2_DURATION / 60)) min $((STEP2_DURATION % 60)) sec"
