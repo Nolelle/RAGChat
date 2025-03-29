@@ -45,7 +45,7 @@ def main():
 
     # Initialize RAG system
     rag_system = RAGSystem(
-        model_name_or_path="trained-models",
+        model_name_or_path="trained-models/phi4-mini-first-responder",
         document_store_dir=args.document_store_dir,
         top_k=args.top_k,
         use_mps=args.use_mps,

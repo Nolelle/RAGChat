@@ -41,7 +41,7 @@ class RAGSystem:
 
     def __init__(
         self,
-        model_name_or_path: str = "trained-models",
+        model_name_or_path: str = "trained-models/phi4-mini-first-responder",
         device: str = None,
         document_store_dir: str = "uploads",
         use_mps: bool = True,
@@ -102,7 +102,8 @@ class RAGSystem:
                 torch.float16 if self.device.type in ["cuda", "mps"] else torch.float32
             )
 
-            # Configure quantization if not on MPS
+            # Configure quantization only if NOT on MPS
+            quantization_config = None  # Default to no quantization config
             if self.device.type != "mps":
                 logger.info("Using 4-bit quantization for model loading")
                 quantization_config = BitsAndBytesConfig(
@@ -112,10 +113,8 @@ class RAGSystem:
                     bnb_4bit_quant_type="nf4",
                 )
             else:
-                logger.info("Using 8-bit quantization for MPS")
-                # For Apple Silicon, use 8-bit quantization which is more stable
-                quantization_config = BitsAndBytesConfig(
-                    load_in_8bit=True,
+                logger.info(
+                    "Skipping bitsandbytes quantization for MPS, using float16 directly"
                 )
 
             # Load model and tokenizer
@@ -123,7 +122,7 @@ class RAGSystem:
                 self.model_name,
                 device_map="auto",
                 torch_dtype=torch_dtype,
-                quantization_config=quantization_config,
+                quantization_config=quantization_config,  # Will be None for MPS
                 trust_remote_code=True,
             )
 
