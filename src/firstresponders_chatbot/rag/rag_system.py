@@ -370,7 +370,7 @@ class RAGSystem:
         Returns:
             List[Document]: List of processed documents
         """
-        logger.info(f"Processing file: {file_path}")
+        logger.info(f"[process_file] Starting processing for file: {file_path}")
 
         try:
             # Create pipeline components
@@ -381,7 +381,7 @@ class RAGSystem:
             file_path_obj = Path(file_path)
             if file_path_obj.suffix.lower() == ".pdf":
                 logger.info(
-                    "PDF file detected - using PDF-optimized splitting parameters"
+                    "[process_file] PDF file detected - using PyPDFToDocument converter with cleaning"
                 )
 
                 # Create a cleaner component for PDFs to handle special characters and formatting
@@ -413,7 +413,7 @@ class RAGSystem:
             # Add appropriate converter based on file type
             if file_path_obj.suffix.lower() == ".pdf":
                 logger.info(
-                    "PDF file detected - using PyPDFToDocument converter with cleaning"
+                    "[process_file] PDF file detected - using PyPDFToDocument converter with cleaning"
                 )
 
                 # For PDFs, perform pre-check with PyPDF2 to assess potential issues
@@ -423,16 +423,22 @@ class RAGSystem:
                     with open(file_path, "rb") as f:
                         pdf_reader = PyPDF2.PdfReader(f)
                         num_pages = len(pdf_reader.pages)
-                        logger.info(f"PDF has {num_pages} pages")
+                        logger.info(f"[process_file] PDF has {num_pages} pages")
 
                         # Try to extract text from first page to check for encoding issues
                         first_page_text = pdf_reader.pages[0].extract_text()
                         if self._detect_garbled_text(first_page_text):
                             logger.warning(
-                                "PDF first page contains potential encoding issues"
+                                "[process_file] PDF first page contains potential encoding issues"
+                            )
+                        else:
+                            logger.info(
+                                "[process_file] PDF first page text seems okay."
                             )
                 except Exception as e:
-                    logger.warning(f"Could not perform PDF pre-check: {str(e)}")
+                    logger.warning(
+                        f"[process_file] Could not perform PDF pre-check: {str(e)}"
+                    )
 
                 pipeline.add_component("converter", pdf_converter)
                 pipeline.add_component("cleaner", cleaner)
@@ -443,7 +449,9 @@ class RAGSystem:
                 pipeline.connect("cleaner.documents", "splitter.documents")
 
                 # Log PDF-specific details
-                logger.info(f"PDF file size: {os.path.getsize(file_path)} bytes")
+                logger.info(
+                    f"[process_file] PDF file size: {os.path.getsize(file_path)} bytes"
+                )
             elif file_path_obj.suffix.lower() in [".txt", ".md"]:
                 pipeline.add_component("converter", text_converter)
                 pipeline.add_component("splitter", splitter)
@@ -455,17 +463,25 @@ class RAGSystem:
                 return []
 
             # Run pipeline
-            logger.info("Starting document conversion pipeline...")
+            logger.info("[process_file] Starting document conversion pipeline...")
             result = pipeline.run({"converter": {"sources": [file_path]}})
+            logger.info(
+                f"[process_file] Pipeline run completed. Result keys: {result.keys()}"
+            )
 
             if "converter" in result:
+                converter_output = result["converter"].get("documents", [])
                 logger.info(
-                    f"Converter output: {len(result['converter'].get('documents', []))} documents"
+                    f"[process_file] Converter output: {len(converter_output)} documents"
                 )
                 # Log sample of converted content
-                if result["converter"].get("documents"):
-                    sample = result["converter"]["documents"][0].content[:500]
-                    logger.info(f"Sample converted content: {sample}...")
+                if converter_output:
+                    sample = (
+                        converter_output[0].content[:500]
+                        if converter_output[0].content
+                        else "<empty content>"
+                    )
+                    logger.info(f"[process_file] Sample converted content: {sample}...")
 
                     # Early detection for severely corrupted PDFs
                     if (
@@ -473,14 +489,25 @@ class RAGSystem:
                         and self._detect_garbled_text(sample)
                     ):
                         logger.warning(
-                            "Initial PDF conversion appears to contain garbled text"
+                            "[process_file] Initial PDF conversion appears to contain garbled text"
                         )
+                else:
+                    logger.warning(
+                        "[process_file] Converter did not produce any documents."
+                    )
+            else:
+                logger.warning(
+                    "[process_file] 'converter' key not found in pipeline result."
+                )
 
             # Check if splitter produced documents
             if "splitter" not in result or not result["splitter"].get("documents"):
+                logger.warning(
+                    "[process_file] Splitter did not produce documents or 'splitter' key missing."
+                )
                 if file_path_obj.suffix.lower() == ".pdf":
                     logger.error(
-                        "Splitter did not produce any documents. Attempting fallback PDF extraction using PyPDF2."
+                        "[process_file] Splitter did not produce any documents. Attempting fallback PDF extraction using PyPDF2."
                     )
                     try:
                         import PyPDF2
@@ -493,7 +520,7 @@ class RAGSystem:
                                 all_text += page_text + "\n"
                         if len(all_text.strip()) < 20:
                             logger.error(
-                                "Fallback extraction produced insufficient text."
+                                "[process_file] Fallback extraction produced insufficient text."
                             )
                             return []
                         paragraphs = [
@@ -505,29 +532,50 @@ class RAGSystem:
                             if len(para) > 20
                         ]
                         logger.info(
-                            f"Fallback extraction produced {len(fallback_docs)} documents."
+                            f"[process_file] Fallback extraction produced {len(fallback_docs)} documents."
                         )
                         result["splitter"] = {"documents": fallback_docs}
                     except Exception as e:
-                        logger.error("Fallback extraction failed: " + str(e))
+                        logger.error(
+                            "[process_file] Fallback extraction failed: " + str(e)
+                        )
                         return []
                 else:
                     logger.error(
-                        "Splitter did not produce any documents for non-PDF file."
+                        "[process_file] Splitter did not produce any documents for non-PDF file."
                     )
-                    return []
+                    return []  # Return empty list if splitter fails for non-PDF
 
-            documents = result["splitter"]["documents"]
+            # Ensure documents are correctly retrieved, even after fallback
+            documents = result.get("splitter", {}).get("documents", [])
+            if not documents:
+                logger.error(
+                    "[process_file] No documents found after splitter/fallback stage."
+                )
+                return []
 
             # Log chunk details
-            logger.info(f"Document splitting results:")
-            logger.info(f"Number of chunks: {len(documents)}")
+            logger.info(f"[process_file] Document splitting results:")
+            logger.info(
+                f"[process_file] Number of chunks before cleaning: {len(documents)}"
+            )
             if documents:
-                avg_chunk_size = sum(len(doc.content) for doc in documents) / len(
-                    documents
+                avg_chunk_size = (
+                    sum(len(doc.content) for doc in documents if doc.content)
+                    / len(documents)
+                    if len(documents) > 0
+                    else 0
                 )
-                logger.info(f"Average chunk size: {avg_chunk_size:.2f} characters")
-                logger.info(f"Sample chunk: {documents[0].content[:200]}...")
+                logger.info(
+                    f"[process_file] Average chunk size: {avg_chunk_size:.2f} characters"
+                )
+                logger.info(
+                    f"[process_file] Sample chunk (pre-cleaning): {documents[0].content[:200] if documents[0].content else '<empty>'}..."
+                )
+            else:  # Added else block
+                logger.warning(
+                    "[process_file] No documents to calculate chunk details from."
+                )
 
             # Clean up each document's content to handle special characters and encoding issues
             cleaned_documents = []
@@ -541,7 +589,9 @@ class RAGSystem:
                 is_garbled = self._detect_garbled_text(content)
                 if is_garbled:
                     garbled_chunks_count += 1
-                    logger.warning(f"Detected likely garbled text in document chunk")
+                    logger.warning(
+                        f"[process_file] Detected likely garbled text in document chunk. ID: {doc.id}"
+                    )
 
                 # Clean content - enhanced cleaning procedure
                 # First, clean control characters
@@ -597,30 +647,37 @@ class RAGSystem:
                     if self._detect_garbled_text(content) or len(content.strip()) < 20:
                         # Skip this chunk if it's still garbled or too short after cleaning
                         logger.warning(
-                            f"Skipping garbled chunk that couldn't be cleaned"
+                            f"[process_file] Skipping garbled chunk that couldn't be cleaned. ID: {doc.id}"
                         )
-                        continue
+                        continue  # Continue to next document
 
                 # Create a new document with the cleaned content
                 cleaned_doc = Document(content=content, meta=doc.meta)
                 cleaned_doc.id = doc.id
 
-                # Add to cleaned documents list
-                cleaned_documents.append(cleaned_doc)
+                # Add to cleaned documents list if content is not empty
+                if cleaned_doc.content and len(cleaned_doc.content.strip()) > 0:
+                    cleaned_documents.append(cleaned_doc)
+                else:
+                    logger.warning(
+                        f"[process_file] Skipping document with empty content after cleaning. ID: {doc.id}"
+                    )
 
-            # Log counts of cleaned and skipped chunks
-            logger.info(f"Original chunk count: {len(documents)}")
-            logger.info(f"Cleaned chunk count: {len(cleaned_documents)}")
-            logger.info(f"Detected {garbled_chunks_count} garbled chunks")
             logger.info(
-                f"Skipped {len(documents) - len(cleaned_documents)} chunks due to unrecoverable garbled text"
+                f"[process_file] Total garbled chunks detected: {garbled_chunks_count}"
+            )
+            logger.info(
+                f"[process_file] Number of documents after cleaning: {len(cleaned_documents)}"
             )
 
             # Check if we have at least some usable documents
             if not cleaned_documents:
+                logger.warning(
+                    "[process_file] No usable documents remaining after cleaning process."
+                )
                 if file_path_obj.suffix.lower() == ".pdf":
                     logger.warning(
-                        "Cleaning removed all document content. Attempting fallback extraction using PyPDF2 for the PDF."
+                        "[process_file] Cleaning removed all document content. Attempting fallback extraction using PyPDF2 for the PDF (again)."  # Added context
                     )
                     try:
                         import PyPDF2
@@ -633,7 +690,7 @@ class RAGSystem:
                                 all_text += page_text + "\n"
                         if len(all_text.strip()) < 20:
                             logger.error(
-                                "Fallback extraction produced insufficient text."
+                                "[process_file] Fallback extraction produced insufficient text."
                             )
                             return []
                         paragraphs = [
@@ -645,43 +702,39 @@ class RAGSystem:
                             if len(para) > 20
                         ]
                         if not fallback_docs:
-                            logger.error("Fallback extraction produced no documents.")
+                            logger.error(
+                                "[process_file] Fallback extraction after cleaning produced no documents."
+                            )
                             return []
                         cleaned_documents = fallback_docs
                         logger.info(
-                            f"Fallback extraction after cleaning produced {len(cleaned_documents)} documents."
+                            f"[process_file] Fallback extraction after cleaning produced {len(cleaned_documents)} documents."
                         )
                     except Exception as e:
                         logger.error(
-                            "Fallback extraction after cleaning failed: " + str(e)
+                            "[process_file] Fallback extraction after cleaning failed: "
+                            + str(e)
                         )
                         return []
                 else:
+                    # If not a PDF and no documents, return empty
                     logger.error(
-                        "No usable documents could be extracted from the file after cleaning"
+                        "[process_file] No documents after cleaning for non-PDF file."
                     )
                     return []
 
-            # If more than 80% of chunks were garbled, warn about potential issues
-            if garbled_chunks_count / len(documents) > 0.8:
-                logger.warning(
-                    f"More than 80% of document chunks contained garbled text. Results may be unreliable."
-                )
-
-            # Replace original documents with cleaned ones
-            documents = cleaned_documents
-
-            # Add file metadata to documents
-            for doc in documents:
-                doc.meta["file_name"] = file_path_obj.name
-                doc.meta["file_path"] = str(file_path)
-
-            logger.info(f"Split {file_path_obj.name} into {len(documents)} chunks")
-            return documents
+            logger.info(
+                f"[process_file] Returning {len(cleaned_documents)} processed documents for {file_path}"
+            )
+            return cleaned_documents
 
         except Exception as e:
-            logger.error(f"Error processing file {file_path}: {str(e)}")
-            logger.exception("Full traceback:")
+            logger.error(
+                f"[process_file] Unexpected error processing file {file_path}: {str(e)}"
+            )
+            logger.exception(
+                "[process_file] Full traceback for process_file error:"
+            )  # Log full traceback
             return []
 
     def index_file(self, file_path: str, session_id: str = "default") -> bool:
@@ -695,141 +748,290 @@ class RAGSystem:
         Returns:
             bool: True if indexing was successful, False otherwise
         """
+        logger.info(
+            f"[index_file] Starting indexing for file: {file_path}, session: {session_id}"
+        )
         try:
             # Check if file exists
             if not os.path.exists(file_path):
-                logger.error(f"File not found: {file_path}")
+                logger.error(f"[index_file] File not found: {file_path}")
                 return False
 
             # Initialize session if not exists
             if session_id not in self.session_files:
+                logger.info(f"[index_file] Initializing new session: {session_id}")
                 self.session_files[session_id] = set()
 
             # For PDFs, perform a pre-check to verify readability
             file_path_obj = Path(file_path)
             if file_path_obj.suffix.lower() == ".pdf":
+                logger.info(f"[index_file] Performing PDF pre-check for: {file_path}")
                 try:
                     import PyPDF2
 
                     with open(file_path, "rb") as f:
                         pdf_reader = PyPDF2.PdfReader(f)
                         num_pages = len(pdf_reader.pages)
-                        logger.info(f"PDF pre-check: {file_path} has {num_pages} pages")
+                        logger.info(
+                            f"[index_file] PDF pre-check: {file_path} has {num_pages} pages"
+                        )
 
                         # Attempt to extract text from the first page
-                        first_page_text = pdf_reader.pages[0].extract_text()
-                        if not first_page_text or len(first_page_text.strip()) < 10:
+                        if num_pages > 0:  # Check if there are pages
+                            first_page_text = pdf_reader.pages[0].extract_text()
+                            if not first_page_text or len(first_page_text.strip()) < 10:
+                                logger.warning(
+                                    f"[index_file] PDF pre-check: {file_path} contains very little text in first page"
+                                )
+                            else:
+                                logger.info(
+                                    "[index_file] PDF pre-check: First page text seems okay."
+                                )
+                        else:
                             logger.warning(
-                                f"PDF pre-check: {file_path} contains very little text in first page"
+                                f"[index_file] PDF pre-check: {file_path} has 0 pages."
                             )
                 except Exception as e:
-                    logger.warning(f"PDF pre-check failed for {file_path}: {str(e)}")
+                    logger.warning(
+                        f"[index_file] PDF pre-check failed for {file_path}: {str(e)}"
+                    )
 
             # Process file
+            logger.info(f"[index_file] Calling process_file for: {file_path}")
             documents = self.process_file(file_path)
             if not documents:
-                logger.error("No documents were created during processing")
+                logger.error(
+                    f"[index_file] process_file returned no documents for {file_path}"
+                )
                 return False
 
-            logger.info(f"Created {len(documents)} documents from file")
-            logger.info(f"Sample document content: {documents[0].content[:200]}")
+            logger.info(
+                f"[index_file] Received {len(documents)} documents from process_file"
+            )
+            if documents:  # Check if documents list is not empty
+                logger.info(
+                    f"[index_file] Sample document content after process_file: {documents[0].content[:200] if documents[0].content else '<empty>'}..."
+                )
 
             # Double-check document quality
             valid_docs = 0
-            for doc in documents:
-                if (
+            for idx, doc in enumerate(documents):  # Added enumerate for index logging
+                is_valid = (
                     doc.content
                     and len(doc.content.strip()) > 20
                     and not self._detect_garbled_text(doc.content)
-                ):
+                )
+                if is_valid:
                     valid_docs += 1
+                else:
+                    logger.warning(
+                        f"[index_file] Document {idx} failed quality check. Content sample: {doc.content[:100] if doc.content else '<empty>'}..."
+                    )
 
-            if valid_docs < len(documents) * 0.3:  # Less than 30% valid
+            logger.info(
+                f"[index_file] Quality check: {valid_docs} out of {len(documents)} documents are valid."
+            )
+            quality_threshold = 0.3
+            if valid_docs < len(documents) * quality_threshold:  # Less than 30% valid
                 logger.warning(
-                    f"Only {valid_docs} out of {len(documents)} documents appear to be valid quality"
+                    f"[index_file] Only {valid_docs} out of {len(documents)} documents appear to be valid quality (threshold: {quality_threshold*100}%)"
                 )
                 if valid_docs == 0:
-                    logger.error("No valid documents found, aborting indexing")
+                    logger.error(
+                        "[index_file] No valid documents found after quality check, aborting indexing"
+                    )
                     return False
+                else:  # Allow indexing if some docs are valid, but log a warning
+                    logger.warning(
+                        "[index_file] Proceeding with indexing despite low quality document ratio."
+                    )
 
             # Add session ID to document metadata
+            logger.info(f"[index_file] Adding metadata to {len(documents)} documents.")
             for doc in documents:
                 doc.meta["session_id"] = session_id
                 doc.meta["file_name"] = os.path.basename(file_path)
                 doc.meta["file_path"] = str(file_path)
 
             # Log document details before embedding
-            logger.info("Document details before embedding:")
+            logger.info("[index_file] Document details before embedding (sample):")
             for i, doc in enumerate(documents[:3]):
-                logger.info(f"Document {i+1} content preview: {doc.content[:200]}...")
-                logger.info(f"Document {i+1} metadata: {doc.meta}")
+                logger.info(
+                    f"[index_file] Document {i+1} content preview: {doc.content[:100] if doc.content else '<empty>'}..."
+                )
+                logger.info(f"[index_file] Document {i+1} metadata: {doc.meta}")
 
             # Embed documents
-            logger.info("Starting document embedding...")
-            embedded_documents = self.document_embedder.run(documents=documents)[
-                "documents"
-            ]
-            logger.info(f"Embedded {len(embedded_documents)} documents")
+            logger.info(
+                f"[index_file] Starting document embedding for {len(documents)} documents..."
+            )
+            embedding_result = self.document_embedder.run(documents=documents)
+            if "documents" not in embedding_result:
+                logger.error(
+                    "[index_file] Embedding step did not return 'documents' key."
+                )
+                return False
+
+            embedded_documents = embedding_result["documents"]
+            logger.info(
+                f"[index_file] Embedding completed. Received {len(embedded_documents)} embedded documents."
+            )
 
             # Verify embeddings
             missing_embeddings = 0
             for i, doc in enumerate(embedded_documents):
                 if not hasattr(doc, "embedding") or doc.embedding is None:
                     missing_embeddings += 1
-                    logger.error(f"Document {i} is missing embeddings!")
+                    logger.error(
+                        f"[index_file] Document {i} (ID: {doc.id}) is missing embeddings!"
+                    )
                 elif i < 3:  # Log first 3 docs
-                    logger.info(f"Document {i} embedding shape: {len(doc.embedding)}")
+                    embedding_shape = (
+                        len(doc.embedding) if isinstance(doc.embedding, list) else "N/A"
+                    )
+                    embedding_sample = (
+                        str(doc.embedding[:5])
+                        if isinstance(doc.embedding, list)
+                        else "N/A"
+                    )
                     logger.info(
-                        f"Document {i} embedding sample: {doc.embedding[:5]}..."
-                    )  # Log first 5 values
+                        f"[index_file] Document {i} embedding shape: {embedding_shape}"
+                    )
+                    logger.info(
+                        f"[index_file] Document {i} embedding sample: {embedding_sample}..."
+                    )
 
             if missing_embeddings > 0:
-                logger.error(f"{missing_embeddings} documents are missing embeddings!")
+                logger.error(
+                    f"[index_file] {missing_embeddings} documents are missing embeddings! Aborting indexing."
+                )
                 return False
+            elif len(embedded_documents) != len(documents):
+                logger.warning(
+                    f"[index_file] Number of embedded documents ({len(embedded_documents)}) does not match original documents ({len(documents)}). Proceeding cautiously."
+                )
 
             # Write to document store
             initial_count = self.document_store.count_documents()
-            logger.info(f"Document store count before writing: {initial_count}")
+            logger.info(
+                f"[index_file] Document store count before writing: {initial_count}"
+            )
 
             # Write new documents
-            self.document_store.write_documents(embedded_documents)
+            logger.info(
+                f"[index_file] Writing {len(embedded_documents)} documents to the store..."
+            )
+            write_result = self.document_store.write_documents(embedded_documents)
+            logger.info(
+                f"[index_file] Document store write_documents result: {write_result}"
+            )  # Log write result if available
+
             final_count = self.document_store.count_documents()
-            logger.info(f"Document store count after writing: {final_count}")
+            logger.info(
+                f"[index_file] Document store count after writing: {final_count}"
+            )
 
             documents_added = final_count - initial_count
-            logger.info(f"Added {documents_added} new documents to store")
+            logger.info(f"[index_file] Added {documents_added} new documents to store.")
 
             # Verify documents were added
-            if documents_added <= 0:
-                logger.error("No new documents were added to the store")
-                return False
+            if (
+                documents_added <= 0 and len(embedded_documents) > 0
+            ):  # Check if we expected to add docs
+                logger.error(
+                    "[index_file] No new documents were added to the store despite having processed documents."
+                )
+                # Optional: Add check for existing documents if overwriting is intended
+                # existing_docs = self.document_store.filter_documents(filters={"field": "file_path", "operator": "==", "value": str(file_path)})
+                # if len(existing_docs) == len(embedded_documents):
+                #    logger.info("[index_file] Documents might have been overwritten.")
+                # else:
+                #    return False # Still consider it a failure if counts don't match expected state
+                return False  # Treat as failure for now
 
             # Mark file as indexed for this session
-            self.indexed_files.add(file_path)
+            self.indexed_files.add(
+                file_path
+            )  # This tracks globally, might need refinement if sessions are strictly isolated
             self.session_files[session_id].add(file_path)
+            logger.info(
+                f"[index_file] Marked '{os.path.basename(file_path)}' as indexed for session '{session_id}'. Total files in session: {len(self.session_files[session_id])}"
+            )
 
             # Verify indexed documents for this session and file
+            logger.info(
+                f"[index_file] Verifying documents in store for file: {file_path}, session: {session_id}"
+            )
             session_file_docs = 0
-            for doc in self.document_store.filter_documents():
-                if doc.meta.get("session_id") == session_id and str(
-                    doc.meta.get("file_path")
-                ) == str(file_path):
-                    session_file_docs += 1
-
-            if session_file_docs == 0:
-                logger.error(
-                    f"Verification failed: No documents found for {file_path} in session {session_id}"
+            try:
+                # Use filter_documents which might be more reliable depending on store implementation
+                filtered_docs = self.document_store.filter_documents(
+                    filters={
+                        "operator": "AND",
+                        "conditions": [
+                            {
+                                "field": "meta.session_id",
+                                "operator": "==",
+                                "value": session_id,
+                            },
+                            {
+                                "field": "meta.file_path",
+                                "operator": "==",
+                                "value": str(file_path),
+                            },
+                        ],
+                    }
                 )
+                session_file_docs = len(filtered_docs)
+                # Log sample IDs of verified docs
+                if session_file_docs > 0:
+                    sample_ids = [d.id for d in filtered_docs[:3]]
+                    logger.info(
+                        f"[index_file] Found {session_file_docs} verified documents. Sample IDs: {sample_ids}"
+                    )
+
+            except Exception as filter_err:
+                logger.error(
+                    f"[index_file] Error during document verification filtering: {filter_err}"
+                )
+                # Fallback to iterating if filter fails (less efficient)
+                all_docs = (
+                    self.document_store.filter_documents()
+                )  # Get all and filter manually
+                session_file_docs = 0
+                for doc in all_docs:
+                    if doc.meta.get("session_id") == session_id and str(
+                        doc.meta.get("file_path")
+                    ) == str(file_path):
+                        session_file_docs += 1
+                logger.info(
+                    f"[index_file] Found {session_file_docs} documents via manual iteration during verification."
+                )
+
+            if (
+                session_file_docs == 0 and documents_added > 0
+            ):  # If we added docs but can't find them by filter
+                logger.error(
+                    f"[index_file] Verification failed: Added {documents_added} docs but found 0 for {file_path} in session {session_id}. Possible filter issue or write failure."
+                )
+                # Consider logging details of the documents that *were* added if possible
                 return False
+            elif session_file_docs < documents_added:
+                logger.warning(
+                    f"[index_file] Verification warning: Added {documents_added} docs but found only {session_file_docs} for {file_path} in session {session_id}."
+                )
+                # Decide if this is acceptable or should be a failure
 
             logger.info(
-                f"Successfully indexed file: {file_path} for session: {session_id} with {session_file_docs} documents"
+                f"[index_file] Successfully indexed file: {file_path} for session: {session_id} with {session_file_docs} documents verified in store."
             )
             return True
 
         except Exception as e:
-            logger.error(f"Error indexing file {file_path}: {str(e)}")
-            logger.exception("Full traceback:")
+            logger.error(f"[index_file] Error indexing file {file_path}: {str(e)}")
+            logger.exception(
+                "[index_file] Full traceback for index_file error:"
+            )  # Ensure full traceback is logged
             return False
 
     def remove_file(self, file_path: str, session_id: str = "default") -> bool:
@@ -1663,7 +1865,7 @@ class RAGSystem:
             )
             logger.info(f"Output length: {len(full_output_with_special)} chars")
             # Log if common markers are found
-            markers = ["<|assistant|>", "<|end|>", "<|endoftext|>", "</s>"]
+            markers = ["<|assistant|>", "<|end|>", "<|endoftext|>", " { "]
             for marker in markers:
                 if marker in full_output_with_special:
                     logger.info(
@@ -1867,7 +2069,7 @@ class RAGSystem:
     def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
         """Extract just the assistant's response from the full output, primarily looking for the marker."""
         assistant_marker = "<|assistant|>"
-        end_markers = ["<|end|>", "<|endoftext|>", "<|EOS|>", "</s>"]
+        end_markers = ["<|end|>", "<|endoftext|>", "<|EOS|>", " { "]
 
         # DEBUG: Log raw output characteristics
         logger.info(f"DEBUG: Raw output length: {len(full_output)} characters")
@@ -2012,3 +2214,45 @@ class RAGSystem:
             return cleaned_output
 
         return "I apologize, but I encountered an issue generating a proper response. Please try rephrasing your question."
+
+    def _prepare_context_metadata(
+        self, context_docs: Optional[List[Document]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Prepare metadata from context documents for the response.
+
+        Args:
+            context_docs: List of context documents.
+
+        Returns:
+            List of dictionaries containing metadata for each document.
+        """
+        if not context_docs:
+            return [
+                {
+                    "source": "No Context",
+                    "content": "No relevant documents were used for this response.",
+                    "file_name": "N/A",
+                }
+            ]
+
+        metadata_list = []
+        for doc in context_docs:
+            file_name = doc.meta.get("file_name", "Unknown Source")
+            content_preview = (
+                doc.content[:250] + "..."
+                if doc.content
+                else "No content preview available."
+            )
+            metadata = {
+                "source": f"Document (from {file_name})",
+                "content": content_preview,
+                "file_name": file_name,
+                "score": (
+                    doc.score if hasattr(doc, "score") else None
+                ),  # Include score if available
+                "meta": doc.meta,  # Include full meta for potential debugging
+            }
+            metadata_list.append(metadata)
+
+        return metadata_list
