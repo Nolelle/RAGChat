@@ -236,8 +236,8 @@ class ChatbotCLI:
                     with torch.no_grad():
                         outputs = self.model.generate(
                             **inputs,
-                            max_new_tokens=100,  # Reduced from 250
-                            min_new_tokens=20,  # Reduced from 30
+                            max_new_tokens=100,
+                            min_new_tokens=20,
                             temperature=0.7,
                             top_p=0.9,
                             top_k=40,
@@ -278,7 +278,7 @@ class ChatbotCLI:
     def _create_prompt(self, question: str) -> str:
         """Create a properly formatted prompt for Phi-3 Medium."""
         # Phi-3 prompt format
-        return f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n\nGuidelines:\n1. Answer questions based on your training, being accurate and precise.\n2. Organize your responses with clear structure.\n3. Be honest about your limitations - if you're uncertain, clearly state that.\n4. Avoid making up specific statistics or data you don't have access to.\n5. Focus on providing practical, actionable information when possible.\n6. Explain concepts thoroughly but concisely.\n7. Use professional terminology appropriate for first responder contexts.\n8. Prioritize safety information in your responses.\n<|user|>\n{question}\n<|assistant|>"
+        return f"<|system|>\nYou are a knowledgeable first responder assistant designed to provide helpful information about emergency procedures and protocols.\n\nGuidelines:\n1. Answer questions based on your training, being accurate and precise.\n2. Organize your responses with clear structure.\n3. Be honest about your limitations - if you're uncertain, clearly state that.\n4. Avoid making up specific statistics or data you don't have access to.\n5. Focus on providing practical, actionable information when possible.\n6. Explain concepts thoroughly but concisely.\n7. Use professional terminology appropriate for first responder contexts.\n8. Prioritize safety information in your responses.\n9. Keep your response concise and to the point.\n<|user|>\n{question}\n<|assistant|>"
 
     def chat(self):
         """Run an interactive chat session."""
