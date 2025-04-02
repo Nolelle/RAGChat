@@ -115,7 +115,7 @@ The FirstRespondersChatbot consists of three main subsystems:
 
 ### Training
 
-1. Place your training documents in the `training-docs/` directory (corrected from `docs/`).
+1. Place your training documents in the `training-docs/` directory.
 
 2. Run the training script:
 
@@ -139,7 +139,8 @@ python -m src.firstresponders_chatbot.rag.run_server
 ```
 
 Access the web interface:
-- Open your browser to http://localhost:8000
+
+- Open your browser to <http://localhost:8000>
 
 Use the Command-Line Interface (CLI):
 
@@ -159,14 +160,14 @@ First, preprocess your first responder documents:
 
 ```bash
 # Use module execution for preprocessing
-python -m preprocess --docs-dir ./docs --output-dir ./data
+python -m src.firstresponders_chatbot.preprocessing.preprocessor --docs-dir ./training-docs --output-dir ./data
 ```
 
 Then create a training dataset:
 
 ```bash
 # Use module execution for dataset creation
-python -m create_dataset --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
+python -m src.firstresponders_chatbot.training.dataset_creator --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
 ```
 
 ### Training Command
@@ -174,7 +175,7 @@ python -m create_dataset --input-file ./data/preprocessed_data.json --output-fil
 ```bash
 # Use module execution for training
 # Example: Train with Phi-4-mini-instruct
-python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder
+python -m src.firstresponders_chatbot.training.trainer --model_name microsoft/Phi-4-mini-instruct --output_dir trained-models/phi4-mini-first-responder
 ```
 
 ### Key Training Parameters
@@ -197,14 +198,14 @@ python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-min
 ./run_training_apple_silicon.sh
 
 # Manual configuration for Phi-4-mini (using module execution)
-python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
+python -m src.firstresponders_chatbot.training.trainer --model_name microsoft/Phi-4-mini-instruct --output_dir trained-models/phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
 ```
 
 #### NVIDIA GPUs
 
 ```bash
 # For Phi-4-mini (using module execution)
-python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --fp16
+python -m src.firstresponders_chatbot.training.trainer --model_name microsoft/Phi-4-mini-instruct --output_dir trained-models/phi4-mini-first-responder --fp16
 ```
 
 ## API Reference
@@ -222,9 +223,13 @@ All endpoints are relative to the base URL: `http://localhost:8000`
 **Endpoint:** `GET /api/health`
 
 **Response:**
+
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "uptime": "3600.45 seconds",
+  "requests_served": 42,
+  "version": "1.1.0"
 }
 ```
 
@@ -233,16 +238,21 @@ All endpoints are relative to the base URL: `http://localhost:8000`
 **Endpoint:** `POST /api/upload`
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body:
-  - `file`: The file to upload (PDF, TXT, or MD)
+  - `file`: The file to upload (PDF, TXT, MD, DOCX, HTML)
+  - `session_id` (optional): Session identifier (default: "default")
 
 **Response (Success):**
+
 ```json
 {
   "status": "success",
   "message": "File 'example.pdf' uploaded and indexed successfully",
-  "file_path": "uploads/12345_example.pdf"
+  "file_name": "example.pdf",
+  "file_path": "uploads/12345_example.pdf",
+  "session_id": "user123"
 }
 ```
 
@@ -251,26 +261,32 @@ All endpoints are relative to the base URL: `http://localhost:8000`
 **Endpoint:** `POST /api/query`
 
 **Request:**
+
 - Content-Type: `application/json`
 - Body:
+
 ```json
 {
-  "query": "What should I do in case of a heart attack?"
+  "query": "What should I do in case of a heart attack?",
+  "session_id": "user123"
 }
 ```
 
 **Response (Success):**
+
 ```json
 {
   "status": "success",
   "answer": "The generated answer from the model...",
   "context": [
     {
-      "file_name": "first_aid_manual.pdf",
-      "snippet": "In case of a heart attack, call emergency services immediately..."
+      "source": "uploads/12345_first_aid_manual.pdf",
+      "content": "In case of a heart attack, call emergency services immediately...",
+      "file_name": "first_aid_manual.pdf"
     }
   ],
-  "query": "What should I do in case of a heart attack?"
+  "query": "What should I do in case of a heart attack?",
+  "session_id": "user123"
 }
 ```
 
@@ -279,6 +295,7 @@ All endpoints are relative to the base URL: `http://localhost:8000`
 **Endpoint:** `POST /api/clear`
 
 **Response (Success):**
+
 ```json
 {
   "status": "success",
@@ -290,7 +307,12 @@ All endpoints are relative to the base URL: `http://localhost:8000`
 
 **Endpoint:** `GET /api/files`
 
+**Parameters:**
+
+- `session_id` (optional): Session identifier (default: "default")
+
 **Response (Success):**
+
 ```json
 {
   "status": "success",
@@ -299,19 +321,22 @@ All endpoints are relative to the base URL: `http://localhost:8000`
       "name": "example.pdf",
       "path": "uploads/12345_example.pdf",
       "size": 1024,
-      "type": "pdf"
+      "type": "pdf",
+      "last_modified": 1621345678.123
     }
-  ]
+  ],
+  "session_id": "user123"
 }
 ```
 
 ### JavaScript/React Example
 
 ```javascript
-// Example: Upload a file
-const uploadFile = async (file) => {
+// Example: Upload a file with session ID
+const uploadFile = async (file, sessionId = "default") => {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('session_id', sessionId);
   
   try {
     const response = await fetch('http://localhost:8000/api/upload', {
@@ -327,15 +352,18 @@ const uploadFile = async (file) => {
   }
 };
 
-// Example: Send a query
-const sendQuery = async (query) => {
+// Example: Send a query with session ID
+const sendQuery = async (query, sessionId = "default") => {
   try {
     const response = await fetch('http://localhost:8000/api/query', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ 
+        query,
+        session_id: sessionId 
+      }),
     });
     
     const data = await response.json();
@@ -352,40 +380,44 @@ const sendQuery = async (query) => {
 ```
 firstresponders-chatbot/
 ├── frontend/             # React frontend code
+│   ├── src/              # Frontend source code
+│   │   ├── components/   # React components
+│   │   │   ├── ChatWindow.jsx
+│   │   │   ├── MessageInput.jsx
+│   │   │   └── Sidebar.jsx
+│   │   ├── App.jsx       # Main application component
+│   │   └── index.js      # Entry point
 ├── src/                  # Main Python package
 │   └── firstresponders_chatbot/
 │       ├── cli/          # Command Line Interface
-│       │   └── cli.py
+│       │   └── cli.py    # CLI implementation
 │       ├── preprocessing/# Document preprocessing
-│       │   └── preprocessor.py
 │       ├── rag/          # RAG system (retrieval, server, etc.)
 │       │   ├── rag_system.py
-│       │   └── run_server.py # Server entry point (run with python -m)
-│       │   └── server.py     # FastAPI server logic
-│       └── training/     # Model training pipeline
-│           ├── dataset_creator.py
-│           └── trainer.py
+│       │   ├── run_server.py # Server entry point
+│       │   └── server.py     # Server implementation
+│       ├── training/     # Model training pipeline
+│       └── utils/        # Utility functions
 ├── trained-models/       # Saved fine-tuned models
 ├── training-docs/        # Source documents for training
 ├── data/                 # Processed data and datasets
 ├── uploads/              # Uploaded documents for RAG
-├── create_dataset.py     # Script entry point (run with python -m)
-├── main.py               # Potentially old/unused entry point
-├── pdf_test.py           # Test script
-├── preprocess.py         # Script entry point (run with python -m)
-├── pyproject.toml        # Project configuration and dependencies
-├── README.md             # This file
+├── project-documentation/# Detailed documentation
+│   ├── API_DOCUMENTATION.md
+│   └── TRAINING_GUIDE.md
 ├── run_training_apple_silicon.sh # Training script
 ├── setup_token.py        # Hugging Face token setup utility
-└── train.py              # Script entry point (run with python -m)
+├── train.py              # Training script entry point
+├── pyproject.toml        # Project configuration and dependencies
+└── README.md             # This file
 ```
 
 ### Key Components
 
-- `src/firstresponders_chatbot/rag/run_server.py`: Entry point for the RAG server (run with `python -m`).
-- `src/firstresponders_chatbot/cli/cli.py`: Entry point for the CLI (run with `python -m`).
-- `train.py`: Main training script (run with `python -m`).
-- `preprocess.py`, `create_dataset.py`: Data preparation scripts (run with `python -m`).
+- `src/firstresponders_chatbot/rag/run_server.py`: Entry point for the RAG server.
+- `src/firstresponders_chatbot/cli/cli.py`: Entry point for the CLI.
+- `src/firstresponders_chatbot/training/`: Training module.
+- `src/firstresponders_chatbot/preprocessing/`: Document preprocessing module.
 - `frontend/`: React-based user interface.
 
 ## Apple Silicon Optimization
@@ -393,10 +425,9 @@ firstresponders-chatbot/
 The system is specifically optimized for Apple Silicon (M1/M2/M3/M4):
 
 - **MPS Acceleration**: Leverages Metal Performance Shaders for faster inference
-- **Quantization**: Supports 4-bit and 8-bit quantization for efficient memory usage
 - **Memory Optimization**: Efficient memory management for M-series chips
 - **Training Scripts**: Specialized scripts for efficient training on Apple Silicon
-- **Model Selection**: Support for smaller models (TinyLlama, Llama 3.1 1B) that work well on Apple hardware
+- **Model Selection**: Support for smaller models like Phi-4-mini that work well on Apple hardware
 
 ## Deployment
 
@@ -404,7 +435,7 @@ The system is specifically optimized for Apple Silicon (M1/M2/M3/M4):
 
 ```bash
 # Start the server
-python server.py
+python -m src.firstresponders_chatbot.rag.run_server
 
 # Access the web interface
 # Open http://localhost:8000 in your browser
@@ -431,29 +462,33 @@ gunicorn -w 4 -b 0.0.0.0:8000 "src.firstresponders_chatbot.rag.run_server:create
 ### Common Issues and Solutions
 
 #### "ValueError: You should supply an encoding or a list of encodings..."
+
 - The dataset format doesn't match what the model expects
 - Solution: Use `--skip_preprocessing` flag to let the trainer handle the conversion
 
-#### "CUDA out of memory"
-- Not enough GPU memory
+#### "CUDA out of memory" or "MPS out of memory"
+
+- Not enough GPU/MPS memory
 - Solutions:
   - Decrease batch size
   - Increase gradient accumulation steps
   - Use a smaller model
-  - Enable 4-bit quantization with `--load_in_4bit`
+  - Reduce sequence length with `--max_seq_length 512`
 
 #### Slow training on Apple Silicon
+
 - Solutions:
   - Reduce sequence lengths
   - Reduce gradient accumulation steps
   - Use smaller batch sizes
-  - Optimize quantization settings
 
 #### "Token not found" error
+
 - Hugging Face token is not set up correctly
 - Solution: Run `python setup_token.py` and follow the prompts
 
 #### Server fails to start
+
 - Check that all dependencies are installed
 - Verify model path is correct
 - Ensure port 8000 is not already in use
@@ -465,6 +500,6 @@ MIT
 
 ## Acknowledgements
 
-- Meta for providing the Llama models
+- Microsoft for providing the Phi-4 models
 - Hugging Face for model hosting and transformers library
 - Haystack for document processing capabilities
