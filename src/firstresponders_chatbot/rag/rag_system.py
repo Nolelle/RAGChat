@@ -16,6 +16,7 @@ import json
 import uuid
 from collections import defaultdict
 import re
+import time
 
 import torch
 from transformers import AutoTokenizer, BitsAndBytesConfig, AutoModelForCausalLM
@@ -1311,63 +1312,227 @@ class RAGSystem:
 
     def _clean_model_output(self, answer: str) -> str:
         """
-        Clean and improve model output to fix common issues.
+        Clean and format model output using Markdown principles.
 
         Args:
-            answer: Raw model output to clean
+            answer: Raw model output (assumed to be mostly extracted answer)
 
         Returns:
-            Cleaned and improved answer
+            Cleaned and Markdown-formatted answer
         """
         if not answer or len(answer.strip()) < 10:
             logger.warning("Answer too short or empty, returning generic response")
             return "I apologize, but I'm having trouble generating a detailed response. Please try asking your question differently."
 
-        # Trim any trailing incomplete sentences or words
-        sentences = re.split(r"(?<=[.!?])\s+", answer)
-        if len(sentences) > 1:
-            # Check if the last sentence doesn't end with punctuation
-            # and is significantly shorter than average
-            avg_sentence_len = sum(len(s) for s in sentences[:-1]) / (
-                len(sentences) - 1
+        # 1. Remove potential leading/trailing prompt remnants
+        potential_prefixes = [
+            "<|assistant|>",
+            "assistant:",
+            "response:",
+            "answer:",
+            "system:",
+        ]
+        for prefix in potential_prefixes:
+            if answer.lower().startswith(prefix):
+                answer = answer[len(prefix) :].lstrip(": \n")
+                logger.info(f"Removed likely prompt prefix: '{prefix}'")
+                break  # Stop after first match
+
+        potential_suffixes = [
+            "<|end|>",
+            "<|endoftext|>",
+            "<|EOS|>",
+            "<|user|>",
+        ]
+        for suffix in potential_suffixes:
+            if answer.lower().endswith(suffix):
+                answer = answer[: -len(suffix)].rstrip(": \n")
+                logger.info(f"Removed likely prompt suffix: '{suffix}'")
+                break  # Stop after first match
+
+        # 2. Basic Whitespace Normalization
+        answer = re.sub(r"[ \t]+", " ", answer)  # Normalize horizontal whitespace
+        answer = answer.strip()  # Remove leading/trailing whitespace
+        answer = re.sub(
+            r"\n{3,}", "\n\n", answer
+        )  # Replace 3+ newlines with exactly two
+
+        # 3. Markdown Formatting Logic
+        lines = answer.split("\n")
+        formatted_lines = []
+        in_list = False
+        current_list_type = None  # 'numbered' or 'bullet'
+        expected_number = 1
+
+        # Process each line for Markdown formatting
+        for line in lines:
+            line = line.strip()
+            if not line:
+                # Empty line - preserve for paragraph breaks
+                formatted_lines.append("")
+                # Empty line typically ends a list
+                if in_list:
+                    in_list = False
+                    current_list_type = None
+                    expected_number = 1
+                continue
+
+            # Check for numbered list items
+            numbered_match = re.match(r"^(\d+)[\.\)\s\-]+\s*(.+)$", line)
+            if numbered_match:
+                number = int(numbered_match.group(1))
+                content = numbered_match.group(2).strip()
+
+                # Handle numbered list formatting
+                if (
+                    not in_list
+                    or current_list_type != "numbered"
+                    or number == expected_number
+                ):
+                    # Normal case - expected sequence or new list
+                    in_list = True
+                    current_list_type = "numbered"
+                    expected_number = number + 1
+                    formatted_lines.append(f"{number}. {content}")
+                else:
+                    # Handle incorrect numbering
+                    if number == 1:
+                        # Start of new list
+                        in_list = True
+                        current_list_type = "numbered"
+                        expected_number = 2
+                        formatted_lines.append(f"1. {content}")
+                    else:
+                        # Continue with corrected numbering
+                        formatted_lines.append(f"{expected_number}. {content}")
+                        expected_number += 1
+                continue
+
+            # Check for bullet list items
+            bullet_match = re.match(r"^[•*\-+]+\s*(.+)$", line)
+            if bullet_match:
+                content = bullet_match.group(1).strip()
+
+                # Format as proper Markdown bullet list
+                in_list = True
+                current_list_type = "bullet"
+                formatted_lines.append(f"* {content}")
+                continue
+
+            # Handle regular text/paragraphs
+            if in_list:
+                # Check if this might be a list item continuation
+                if formatted_lines and (line[0].islower() or line[0] in "([,;:'"):
+                    # Append to previous line as continuation
+                    formatted_lines[-1] += f" {line}"
+                else:
+                    # New paragraph ends the list
+                    in_list = False
+                    current_list_type = None
+                    expected_number = 1
+                    formatted_lines.append(line)
+            else:
+                # Regular paragraph text
+                formatted_lines.append(line)
+
+        # 4. Final Formatting and Cleanup
+        formatted_answer = "\n\n".join(
+            [l.strip() for l in " ".join(formatted_lines).split("\n\n")]
+        )
+
+        # Ensure proper list formatting
+        # Single newline between list items of the same type
+        formatted_answer = re.sub(
+            r"(\d+\.\s[^\n]+)\n\n(\d+\.)", r"\1\n\2", formatted_answer
+        )
+        formatted_answer = re.sub(
+            r"(\*\s[^\n]+)\n\n(\*\s)", r"\1\n\2", formatted_answer
+        )
+
+        # Ensure proper paragraph and list separation
+        # Force new line for list items that appear mid-paragraph
+        formatted_answer = re.sub(
+            r"([^\n])([\d]+\.|\*\s)", r"\1\n\n\2", formatted_answer
+        )
+        # Make sure ordered lists have proper formatting (number, period, space)
+        formatted_answer = re.sub(r"(\d+)[^\.\s](\s)", r"\1.\2", formatted_answer)
+        # Ensure paragraphs have double line breaks
+        formatted_answer = re.sub(r"([^\n])\n([^\n])", r"\1\n\n\2", formatted_answer)
+
+        # Normalize line endings
+        formatted_answer = formatted_answer.replace("\r\n", "\n").replace("\r", "\n")
+
+        # Fix for list output appearing as one blob - more explicit processing
+        # First, identify the numbered lists in the text
+        list_pattern = r"(\d+\.\s.+?)(?=\n\d+\.|$)"
+        matches = re.findall(list_pattern, formatted_answer, re.DOTALL)
+
+        # If we found numbered lists
+        if matches:
+            # Split the formatted answer by the lists
+            segments = re.split(list_pattern, formatted_answer, flags=re.DOTALL)
+
+            # Rebuild with proper line breaks
+            new_answer = ""
+            for i in range(len(segments)):
+                if i % 2 == 0:  # Regular text segments
+                    new_answer += segments[i]
+                else:  # List item segments
+                    # Add each list item with proper line break
+                    item_text = segments[i].strip()
+                    # Ensure item starts with a number followed by period and space
+                    if not re.match(r"^\d+\.\s", item_text):
+                        item_number = re.match(r"^\d+", item_text)
+                        if item_number:
+                            item_text = f"{item_number.group(0)}. {item_text[len(item_number.group(0)):].lstrip('.) ')}"
+
+                    # Add the list item with a guaranteed newline before it
+                    if not new_answer.endswith("\n\n"):
+                        new_answer += "\n\n"
+                    new_answer += item_text + "\n"
+
+            formatted_answer = new_answer.strip()
+
+            # Now make sure multi-line lists have proper indentation and spacing
+            formatted_answer = re.sub(
+                r"(\d+\.\s.+?)(\n)(?!\d+\.|\s*$|\n)", r"\1\2    ", formatted_answer
             )
-            last_sentence = sentences[-1]
-            if (
-                not re.search(r"[.!?]$", last_sentence)
-                and len(last_sentence) < avg_sentence_len * 0.6
-                and len(last_sentence) < 30
-            ):
-                logger.info(f"Trimming incomplete last sentence: '{last_sentence}'")
-                answer = " ".join(sentences[:-1])
 
-        # Fix common formatting issues
-        answer = re.sub(r"\n{3,}", "\n\n", answer)  # Replace 3+ newlines with 2
-        answer = re.sub(r"[ \t]+", " ", answer)  # Normalize spaces/tabs
+        # Process bullet lists with asterisks
+        bullet_pattern = r"(\*\s.+?)(?=\n\*\s|$)"
+        bullet_matches = re.findall(bullet_pattern, formatted_answer, re.DOTALL)
 
-        # Fix list item formatting (make sure there's a space after list markers)
-        answer = re.sub(r"(\d+\.|\*|-)(\S)", r"\1 \2", answer)
+        # If we found bullet lists
+        if bullet_matches:
+            # Split the formatted answer by the bullet points
+            segments = re.split(bullet_pattern, formatted_answer, flags=re.DOTALL)
 
-        # Add a period at the end if missing
-        if answer and not re.search(r"[.!?]$", answer.strip()):
-            answer = answer.strip() + "."
+            # Rebuild with proper line breaks
+            new_answer = ""
+            for i in range(len(segments)):
+                if i % 2 == 0:  # Regular text segments
+                    new_answer += segments[i]
+                else:  # Bullet item segments
+                    # Add each bullet item with proper line break
+                    item_text = segments[i].strip()
 
-        # Avoid partial sentences by making sure we end with a proper sentence
-        if not answer.endswith((".", "!", "?")) and not answer.endswith(
-            (".\n", "!\n", "?\n")
-        ):
-            # Check if there appears to be a partial sentence at the end
-            if len(answer) > 20 and " " in answer[-20:]:
-                # Find the last sentence boundary
-                last_period = max(
-                    answer.rfind("."), answer.rfind("!"), answer.rfind("?")
-                )
-                if last_period != -1 and last_period > len(answer) * 0.5:
-                    logger.info(
-                        f"Trimming partial sentence at end, cut at position {last_period+1}"
-                    )
-                    answer = answer[: last_period + 1]
+                    # Ensure item starts with an asterisk and space
+                    if not re.match(r"^\*\s", item_text):
+                        item_text = f"* {item_text.lstrip('*').lstrip()}"
 
-        return answer.strip()
+                    # Add the bullet item with a guaranteed newline before it
+                    if not new_answer.endswith("\n\n"):
+                        new_answer += "\n\n"
+                    new_answer += item_text + "\n"
+
+            formatted_answer = new_answer.strip()
+
+            # Now make sure multi-line bullet lists have proper indentation and spacing
+            formatted_answer = re.sub(
+                r"(\*\s.+?)(\n)(?!\*\s|\d+\.|\s*$|\n)", r"\1\2    ", formatted_answer
+            )
+
+        return formatted_answer
 
     def generate_response(
         self,
@@ -1586,13 +1751,36 @@ class RAGSystem:
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
+            # >>> ADDED DEBUG LOG: Raw output tensor
+            logger.info(f"DEBUG_GARBLE: Raw output tensor shape: {outputs[0].shape}")
+            logger.info(
+                f"DEBUG_GARBLE: Raw output tensor (first 50 tokens): {outputs[0][:50]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: Raw output tensor (last 50 tokens): {outputs[0][-50:]}"
+            )
 
             # Try both decoding approaches: with and without special tokens
             full_output_with_special = self.tokenizer.decode(
                 outputs[0], skip_special_tokens=False
             )
+            # >>> ADDED DEBUG LOG: After decode (with special)
+            logger.info(
+                f"DEBUG_GARBLE: Decoded (with special) - First 100 chars: {full_output_with_special[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: Decoded (with special) - Last 100 chars: {full_output_with_special[-100:]}"
+            )
+
             full_output_no_special = self.tokenizer.decode(
                 outputs[0], skip_special_tokens=True
+            )
+            # >>> ADDED DEBUG LOG: After decode (no special)
+            logger.info(
+                f"DEBUG_GARBLE: Decoded (no special) - First 100 chars: {full_output_no_special[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: Decoded (no special) - Last 100 chars: {full_output_no_special[-100:]}"
             )
 
             # Debug log the raw outputs with special tokens visible
@@ -1653,6 +1841,13 @@ class RAGSystem:
 
             # Clean and post-process the answer
             answer = self._clean_model_output(answer)
+            # >>> ADDED DEBUG LOG: Before final cleaning
+            logger.info(
+                f"DEBUG_GARBLE: Text before _clean_model_output - First 100 chars: {answer[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: Text before _clean_model_output - Last 100 chars: {answer[-100:]}"
+            )
 
             # Special check for knowledge-only responses with line breaking issues
             if (
@@ -1662,131 +1857,77 @@ class RAGSystem:
                     "Detected excessive line breaks in knowledge-only response, applying extra formatting"
                 )
 
-                # More aggressive newline removal for knowledge-only mode
-                answer = re.sub(r"\n+", " ", answer)  # Replace all newlines with spaces
-                answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
+                # Don't reformat if the response contains Markdown list markers
+                if re.search(
+                    r"(\n\s*\d+\.\s|\n\s*\*\s|\n\s*-\s|\d+\.\s|\*\s|\n\d+\.|\n\s*\d+\))",
+                    answer,
+                ):
+                    logger.info("Detected Markdown lists, preserving formatting")
+                else:
+                    # More aggressive newline removal for knowledge-only mode
+                    answer = re.sub(
+                        r"\n+", " ", answer
+                    )  # Replace all newlines with spaces
+                    answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
 
-                # Re-introduce paragraph breaks at proper sentence boundaries
-                sentences = re.split(r"(?<=[.!?])\s+", answer)
-                paragraphs = []
-                current_para = []
+                    # Re-introduce paragraph breaks at proper sentence boundaries
+                    sentences = re.split(r"(?<=[.!?])\s+", answer)
+                    paragraphs = []
+                    current_para = []
 
-                for sentence in sentences:
-                    if not sentence.strip():
-                        continue
+                    for sentence in sentences:
+                        if not sentence.strip():
+                            continue
 
-                    current_para.append(sentence)
-                    # Start new paragraph every 2-3 sentences
-                    if len(current_para) >= 2 and random.random() < 0.4:
+                        current_para.append(sentence)
+                        # Start new paragraph every 2-3 sentences
+                        if len(current_para) >= 2 and random.random() < 0.4:
+                            paragraphs.append(" ".join(current_para))
+                            current_para = []
+
+                    # Add any remaining sentences
+                    if current_para:
                         paragraphs.append(" ".join(current_para))
-                        current_para = []
 
-                # Add any remaining sentences
-                if current_para:
-                    paragraphs.append(" ".join(current_para))
-
-                # Join paragraphs with newlines
-                answer = "\n\n".join(paragraphs)
-                logger.info(f"Reformatted response into {len(paragraphs)} paragraphs")
-
-            # Check if the answer appears garbled
-            if self._detect_garbled_text(answer, is_model_output=True):
-                logger.warning(
-                    "Generated answer appears to be garbled, generating fallback response"
-                )
-                # Create a simpler prompt and try again
-                simpler_prompt = f"<|system|>\nAnswer this question briefly and clearly: {query}\n<|user|>\n{query}\n<|assistant|>"
-                simpler_inputs = self.tokenizer(simpler_prompt, return_tensors="pt").to(
-                    self.device
-                )
-
-                with torch.no_grad():
-                    simpler_outputs = self.model.generate(
-                        **simpler_inputs,
-                        max_new_tokens=300,
-                        temperature=0.4,
-                        top_p=0.9,
-                        repetition_penalty=1.2,
-                        do_sample=True,
-                        pad_token_id=self.tokenizer.pad_token_id,
+                    # Join paragraphs with newlines
+                    answer = "\n\n".join(paragraphs)
+                    logger.info(
+                        f"Reformatted response into {len(paragraphs)} paragraphs"
                     )
 
-                simpler_output = self.tokenizer.decode(
-                    simpler_outputs[0], skip_special_tokens=False
+            # Final check for list items that should be properly formatted
+            # Check if there are numbered list items without proper formatting
+            list_check_pattern = r"(?:^|\n)[ \t]*(\d+)[ \t]*[\)\.\-][ \t]*(.+?)(?:$|\n)"
+            if re.search(list_check_pattern, answer, re.MULTILINE):
+                logger.info(
+                    "Found potentially unformatted numbered list items, applying Markdown formatting"
                 )
-                answer = self._extract_answer_from_output(
-                    simpler_output, simpler_prompt
+                # Reformat numbered lists with proper Markdown
+                answer = re.sub(
+                    list_check_pattern, r"\n\1. \2\n", answer, flags=re.MULTILINE
                 )
+                # Normalize whitespace and newlines
+                answer = re.sub(r"[ \t]+", " ", answer)
+                answer = re.sub(r"\n{3,}", "\n\n", answer)
 
-                # Clean and post-process the answer
-                answer = self._clean_model_output(answer)
-
-                # If still garbled, use a generic response
-                if self._detect_garbled_text(answer, is_model_output=True):
-                    answer = "I apologize, but I'm having trouble generating a clear response. Please try reformulating your question."
-
-                # Additional fallback for outputs that are just dots, colons, or special characters
-                # This handles the case of ":::::......::::" or similar patterns
-                if answer:
-                    # Check if the answer is mostly special characters or repeated punctuation
-                    special_chars = sum(1 for c in answer if c in ".:;,?!-_")
-                    if (
-                        special_chars / len(answer) > 0.7
-                    ):  # If more than 70% are special chars
-                        logger.warning(
-                            "Answer consists mostly of special characters or punctuation, using fallback"
-                        )
-
-                        # Try one more time with an even simpler prompt
-                        basic_prompt = f"<|system|>\nYou are a helpful first responder assistant. Answer this question in a simple, direct way: {query}\n<|user|>\n{query}\n<|assistant|>"
-
-                        try:
-                            basic_inputs = self.tokenizer(
-                                basic_prompt, return_tensors="pt"
-                            ).to(self.device)
-                            with torch.no_grad():
-                                basic_outputs = self.model.generate(
-                                    **basic_inputs,
-                                    max_new_tokens=200,
-                                    temperature=0.3,  # Lower temperature for more deterministic output
-                                    top_p=0.8,
-                                    top_k=40,
-                                    repetition_penalty=1.3,
-                                    do_sample=True,
-                                    pad_token_id=self.tokenizer.pad_token_id,
-                                )
-
-                            basic_output = self.tokenizer.decode(
-                                basic_outputs[0], skip_special_tokens=True
-                            )
-
-                            # Remove the prompt part manually if it's present
-                            if basic_prompt in basic_output:
-                                basic_answer = basic_output.split(basic_prompt, 1)[
-                                    1
-                                ].strip()
-                            else:
-                                basic_answer = basic_output.strip()
-
-                            # If we got a reasonable answer, use it
-                            if basic_answer and len(basic_answer) > 20:
-                                answer = basic_answer
-                            else:
-                                answer = "I apologize, but I'm having trouble generating a response. Please try rephrasing your question."
-
-                        except Exception as e:
-                            logger.error(
-                                f"Error in basic fallback generation: {str(e)}"
-                            )
-                            answer = "I apologize, but I'm experiencing technical difficulties. Please try again later."
-
-            # Provide detailed context information and ensure proper source attribution
-            context_metadata = self._prepare_context_metadata(context_docs)
+            # Check for bullet points
+            bullet_check_pattern = r"(?:^|\n)[ \t]*[\*\-\•\+][ \t]*(.+?)(?:$|\n)"
+            if re.search(bullet_check_pattern, answer, re.MULTILINE):
+                logger.info(
+                    "Found potentially unformatted bullet list items, applying Markdown formatting"
+                )
+                # Reformat bullet lists with proper Markdown
+                answer = re.sub(
+                    bullet_check_pattern, r"\n* \1\n", answer, flags=re.MULTILINE
+                )
+                # Normalize whitespace and newlines
+                answer = re.sub(r"[ \t]+", " ", answer)
+                answer = re.sub(r"\n{3,}", "\n\n", answer)
 
             return {
                 "query": query,
                 "answer": answer,
-                "context": context_metadata,
+                "context": self._prepare_context_metadata(context_docs),
             }
 
         except Exception as e:
@@ -1818,6 +1959,10 @@ class RAGSystem:
         Returns:
             Dict containing the response and context information (indicating no context used).
         """
+        # >>> ADDED DEBUG LOG: Start of generate_from_knowledge
+        logger.info(
+            f"DEBUG_GARBLE: Entering generate_from_knowledge for query: {query}"
+        )
         try:
             logger.info(
                 f"Generating response for query '{query}' using model knowledge only."
@@ -1830,6 +1975,9 @@ class RAGSystem:
 
             # Add specific instruction about formatting to prevent fragmented responses
             system_message += "\nPlease provide a clear, complete answer in full sentences and well-structured paragraphs. Avoid excessive line breaks or fragments."
+
+            # Add instruction to format lists as Markdown
+            system_message += "\nFor any lists in your response, use proper Markdown formatting: numbered lists with '1. ', '2. ', etc., and bullet lists with '* ' at the start of each item."
 
             prompt = f"<|system|>\n{system_message}\n<|user|>\n{query}\n<|assistant|>"
 
@@ -1850,13 +1998,38 @@ class RAGSystem:
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
+            # >>> ADDED DEBUG LOG: Raw output tensor (knowledge mode)
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Raw output tensor shape: {outputs[0].shape}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Raw output tensor (first 50 tokens): {outputs[0][:50]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Raw output tensor (last 50 tokens): {outputs[0][-50:]}"
+            )
 
             # Decode with both approaches
             full_output_with_special = self.tokenizer.decode(
                 outputs[0], skip_special_tokens=False
             )
+            # >>> ADDED DEBUG LOG: After decode (with special) (knowledge mode)
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Decoded (with special) - First 100 chars: {full_output_with_special[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Decoded (with special) - Last 100 chars: {full_output_with_special[-100:]}"
+            )
+
             full_output_no_special = self.tokenizer.decode(
                 outputs[0], skip_special_tokens=True
+            )
+            # >>> ADDED DEBUG LOG: After decode (no special) (knowledge mode)
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Decoded (no special) - First 100 chars: {full_output_no_special[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Decoded (no special) - Last 100 chars: {full_output_no_special[-100:]}"
             )
 
             # Debug log the raw output with special tokens visible
@@ -1889,12 +2062,15 @@ class RAGSystem:
             answer = self._extract_answer_from_output(full_output_with_special, prompt)
 
             # If the extracted answer seems problematic, try the version without special tokens
+            # >>> MODIFYING CONDITION: Removed newline check to prevent incorrect fallback <<<<
             if (
                 not answer
                 or len(answer.strip()) < 20
-                or answer.count("\n") > answer.count(".")
+                # or answer.count("\n") > answer.count(".") # Removed this condition
             ):
-                logger.info("Trying alternative extraction without special tokens")
+                logger.info(
+                    "Initial extraction problematic (empty/short), trying alternative extraction without special tokens"
+                )
                 # Get everything after the prompt
                 if prompt in full_output_no_special:
                     alt_answer = full_output_no_special.split(prompt, 1)[1].strip()
@@ -1910,6 +2086,13 @@ class RAGSystem:
 
             # Clean and post-process the answer
             answer = self._clean_model_output(answer)
+            # >>> ADDED DEBUG LOG: Before final cleaning (knowledge mode)
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Text before _clean_model_output - First 100 chars: {answer[:100]}"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: [Knowledge] Text before _clean_model_output - Last 100 chars: {answer[-100:]}"
+            )
 
             # Special check for knowledge-only responses with line breaking issues
             if (
@@ -1919,32 +2102,72 @@ class RAGSystem:
                     "Detected excessive line breaks in knowledge-only response, applying extra formatting"
                 )
 
-                # More aggressive newline removal for knowledge-only mode
-                answer = re.sub(r"\n+", " ", answer)  # Replace all newlines with spaces
-                answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
+                # Don't reformat if the response contains Markdown list markers
+                if re.search(
+                    r"(\n\s*\d+\.\s|\n\s*\*\s|\n\s*-\s|\d+\.\s|\*\s|\n\d+\.|\n\s*\d+\))",
+                    answer,
+                ):
+                    logger.info("Detected Markdown lists, preserving formatting")
+                else:
+                    # More aggressive newline removal for knowledge-only mode
+                    answer = re.sub(
+                        r"\n+", " ", answer
+                    )  # Replace all newlines with spaces
+                    answer = re.sub(r"\s{2,}", " ", answer)  # Normalize whitespace
 
-                # Re-introduce paragraph breaks at proper sentence boundaries
-                sentences = re.split(r"(?<=[.!?])\s+", answer)
-                paragraphs = []
-                current_para = []
+                    # Re-introduce paragraph breaks at proper sentence boundaries
+                    sentences = re.split(r"(?<=[.!?])\s+", answer)
+                    paragraphs = []
+                    current_para = []
 
-                for sentence in sentences:
-                    if not sentence.strip():
-                        continue
+                    for sentence in sentences:
+                        if not sentence.strip():
+                            continue
 
-                    current_para.append(sentence)
-                    # Start new paragraph every 2-3 sentences
-                    if len(current_para) >= 2 and random.random() < 0.4:
+                        current_para.append(sentence)
+                        # Start new paragraph every 2-3 sentences
+                        if len(current_para) >= 2 and random.random() < 0.4:
+                            paragraphs.append(" ".join(current_para))
+                            current_para = []
+
+                    # Add any remaining sentences
+                    if current_para:
                         paragraphs.append(" ".join(current_para))
-                        current_para = []
 
-                # Add any remaining sentences
-                if current_para:
-                    paragraphs.append(" ".join(current_para))
+                    # Join paragraphs with newlines
+                    answer = "\n\n".join(paragraphs)
+                    logger.info(
+                        f"Reformatted response into {len(paragraphs)} paragraphs"
+                    )
 
-                # Join paragraphs with newlines
-                answer = "\n\n".join(paragraphs)
-                logger.info(f"Reformatted response into {len(paragraphs)} paragraphs")
+            # Final check for list items that should be properly formatted
+            # Check if there are numbered list items without proper formatting
+            list_check_pattern = r"(?:^|\n)[ \t]*(\d+)[ \t]*[\)\.\-][ \t]*(.+?)(?:$|\n)"
+            if re.search(list_check_pattern, answer, re.MULTILINE):
+                logger.info(
+                    "Found potentially unformatted numbered list items, applying Markdown formatting"
+                )
+                # Reformat numbered lists with proper Markdown
+                answer = re.sub(
+                    list_check_pattern, r"\n\1. \2\n", answer, flags=re.MULTILINE
+                )
+                # Normalize whitespace and newlines
+                answer = re.sub(r"[ \t]+", " ", answer)
+                answer = re.sub(r"\n{3,}", "\n\n", answer)
+
+            # Check for bullet points
+            bullet_check_pattern = r"(?:^|\n)[ \t]*[\*\-\•\+][ \t]*(.+?)(?:$|\n)"
+            if re.search(bullet_check_pattern, answer, re.MULTILINE):
+                logger.info(
+                    "Found potentially unformatted bullet list items, applying Markdown formatting"
+                )
+                # Reformat bullet lists with proper Markdown
+                answer = re.sub(
+                    bullet_check_pattern, r"\n* \1\n", answer, flags=re.MULTILINE
+                )
+                # Normalize whitespace and newlines
+                answer = re.sub(r"[ \t]+", " ", answer)
+                answer = re.sub(r"\n{3,}", "\n\n", answer)
 
             return {
                 "query": query,
@@ -1972,6 +2195,7 @@ class RAGSystem:
                     }
                 ],
             }
+        # >>> ADDED DEBUG LOG: Exiting generate_from_knowledge
 
     def _format_context_for_prompt(self, context_docs: List[Document]) -> str:
         """Format the context documents into a string for the prompt."""
@@ -2068,152 +2292,210 @@ class RAGSystem:
 
     def _extract_answer_from_output(self, full_output: str, prompt: str) -> str:
         """Extract just the assistant's response from the full output, primarily looking for the marker."""
+        # >>> ADDED DEBUG LOG: Entering _extract_answer_from_output
+        logger.info(
+            f"DEBUG_GARBLE: Entering _extract_answer_from_output - Input First 100: '{full_output[:100]}'"
+        )
+        logger.info(
+            f"DEBUG_GARBLE: Entering _extract_answer_from_output - Input Last 100: '{full_output[-100:]}'"
+        )
+
         assistant_marker = "<|assistant|>"
-        end_markers = ["<|end|>", "<|endoftext|>", "<|EOS|>", " { "]
+        # Add variations sometimes seen
+        assistant_markers = [assistant_marker, "assistant:", "<|im_start|>assistant"]
+        end_markers = [
+            "<|end|>",
+            "<|endoftext|>",
+            "<|EOS|>",
+            " { ",
+            "<|user|>",
+            "user:",
+            "<|im_end|>",
+        ]
+
+        # Normalize output slightly for more reliable marker detection
+        normalized_output = full_output.strip()
 
         # DEBUG: Log raw output characteristics
-        logger.info(f"DEBUG: Raw output length: {len(full_output)} characters")
-        logger.info(f"DEBUG: Raw output first 20 chars: '{full_output[:20]}'")
-        logger.info(f"DEBUG: Raw output last 20 chars: '{full_output[-20:]}'")
-        logger.info(
-            f"DEBUG: Assistant marker in output: {assistant_marker in full_output}"
-        )
+        logger.info(f"DEBUG: Raw output length: {len(normalized_output)} characters")
+        logger.info(f"DEBUG: Raw output first 50 chars: '{normalized_output[:50]}'")
+        logger.info(f"DEBUG: Raw output last 50 chars: '{normalized_output[-50:]}'")
 
-        for marker in end_markers:
+        found_marker = None
+        last_marker_pos = -1
+
+        # Primary method: Find the *last* occurrence of any known assistant marker
+        for marker in assistant_markers:
+            pos = normalized_output.rfind(marker)
+            if pos > last_marker_pos:
+                last_marker_pos = pos
+                found_marker = marker
+
+        if last_marker_pos != -1 and found_marker:
+            # Get everything after the found assistant marker
+            response = normalized_output[last_marker_pos + len(found_marker) :].strip()
             logger.info(
-                f"DEBUG: End marker '{marker}' in output: {marker in full_output}"
+                f"DEBUG: Found assistant marker '{found_marker}' at position {last_marker_pos}"
+            )
+            logger.info(
+                f"DEBUG: Extracted after marker (first 50 chars): '{response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{response[-50:]}'"
             )
 
-        # Log character distribution to check for potentially garbled text
-        non_ascii_chars = [c for c in full_output if ord(c) > 127]
-        logger.info(
-            f"DEBUG: Non-ASCII character count: {len(non_ascii_chars)}/{len(full_output)} ({len(non_ascii_chars)/len(full_output)*100:.2f}%)"
-        )
-        logger.info(f"DEBUG: Non-ASCII characters: {non_ascii_chars[:20]} ...")
-
-        # Primary method: Find the last occurrence of the assistant marker
-        last_marker_pos = full_output.rfind(assistant_marker)
-        if last_marker_pos != -1:
-            # Get everything after the assistant marker
-            response = full_output[last_marker_pos + len(assistant_marker) :].strip()
-            logger.info(f"DEBUG: Found assistant marker at position {last_marker_pos}")
-            logger.info(
-                f"DEBUG: Extract after marker (first 50 chars): '{response[:50]}'..."
-            )
-
-            # Remove any end markers
+            # Remove any end markers appearing *after* the start of the response
+            earliest_end_marker_pos = len(response)
+            found_end_marker = None
             for end_marker in end_markers:
-                if end_marker in response:
-                    end_pos = response.find(end_marker)
-                    logger.info(
-                        f"DEBUG: Found end marker '{end_marker}' at position {end_pos} in extracted response"
-                    )
-                    response = response.split(end_marker)[0].strip()
+                pos = response.find(end_marker)
+                if pos != -1 and pos < earliest_end_marker_pos:
+                    earliest_end_marker_pos = pos
+                    found_end_marker = end_marker
 
-            # Check if the response is just EOS or empty
-            if response and response != self.tokenizer.eos_token:
-                # Early cleaning of response to handle excessive line breaks and colons
-                if response.startswith(":"):
-                    response = response.lstrip(":")
-                    logger.info("Removed leading colon from extracted response")
+            if found_end_marker:
+                logger.info(
+                    f"DEBUG: Found end marker '{found_end_marker}' at position {earliest_end_marker_pos} in extracted response"
+                )
+                response = response[:earliest_end_marker_pos].strip()
+                logger.info(
+                    f"DEBUG: Response after removing end marker (first 50 chars): '{response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{response[-50:]}'"
+                )
 
-                # Handle excessive newlines early
-                if response.count("\n\n") > 3:
-                    logger.info("Cleaning excessive newlines in extracted response")
-                    response = re.sub(r"\n{3,}", "\n\n", response)
-
+            # Check if the response is just EOS or empty after stripping markers
+            if response and response.lower() != self.tokenizer.eos_token.lower():
+                # Early cleaning of response to handle leading punctuation often left by markers
+                response = response.lstrip(":\\n ")
                 logger.info("Extracted response using assistant marker.")
                 logger.info(
-                    f"DEBUG: Final extracted response (first 50 chars): '{response[:50]}'..."
+                    f"DEBUG: Final extracted response (first 50 chars): '{response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{response[-50:]}'"
                 )
                 return response
             else:
-                logger.warning("Found assistant marker but response was empty or EOS.")
-                logger.info(
-                    f"DEBUG: Empty response after marker, response: '{response}'"
+                logger.warning(
+                    "Found assistant marker but response was empty or EOS after stripping end markers."
                 )
-
-        # Fallback 1: Try to extract between assistant marker and end markers
-        if assistant_marker in full_output:
-            # Split by assistant marker and take the last part
-            response_with_end = full_output.split(assistant_marker)[-1].strip()
-            logger.info(
-                f"DEBUG: Fallback 1 - response after splitting (first 50 chars): '{response_with_end[:50]}'..."
+                logger.info(
+                    f"DEBUG: Empty response after marker processing, response: '{response}'"
+                )
+        else:
+            logger.warning(
+                f"Could not find any known assistant markers: {assistant_markers}"
             )
 
-            # Look for any end markers and split by the first one found
-            for end_marker in end_markers:
-                if end_marker in response_with_end:
-                    clean_response = response_with_end.split(end_marker)[0].strip()
-                    logger.info(
-                        f"DEBUG: Fallback 1 - found end marker '{end_marker}', response before marker: '{clean_response[:50]}'..."
-                    )
-                    if clean_response:
-                        logger.info(
-                            f"Extracted response using end marker: {end_marker}"
-                        )
-                        return clean_response
-
-        # Fallback 2: If marker method failed, try stripping the prompt (less reliable)
-        if full_output.startswith(prompt):
-            stripped_response = full_output[len(prompt) :].strip()
+        # Fallback 1: If marker method failed, try stripping the prompt (less reliable)
+        # Make prompt stripping more robust by checking variations
+        normalized_prompt = prompt.strip()
+        if normalized_output.startswith(normalized_prompt):
+            stripped_response = normalized_output[len(normalized_prompt) :].strip()
             logger.info(
-                f"DEBUG: Fallback 2 - prompt-stripped response (first 50 chars): '{stripped_response[:50]}'..."
+                f"DEBUG: Fallback 1 - prompt-stripped response (first 50 chars): '{stripped_response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{stripped_response[-50:]}'"
             )
 
             # Also check for end markers in the stripped response
+            earliest_end_marker_pos = len(stripped_response)
+            found_end_marker = None
             for end_marker in end_markers:
-                if end_marker in stripped_response:
-                    end_pos = stripped_response.find(end_marker)
-                    logger.info(
-                        f"DEBUG: Fallback 2 - found end marker '{end_marker}' at position {end_pos}"
-                    )
-                    stripped_response = stripped_response.split(end_marker)[0].strip()
+                pos = stripped_response.find(end_marker)
+                if pos != -1 and pos < earliest_end_marker_pos:
+                    earliest_end_marker_pos = pos
+                    found_end_marker = end_marker
 
-            if stripped_response and stripped_response != self.tokenizer.eos_token:
+            if found_end_marker:
+                logger.info(
+                    f"DEBUG: Fallback 1 - Found end marker '{found_end_marker}' at position {earliest_end_marker_pos}"
+                )
+                stripped_response = stripped_response[:earliest_end_marker_pos].strip()
+
+            if (
+                stripped_response
+                and stripped_response.lower() != self.tokenizer.eos_token.lower()
+            ):
+                stripped_response = stripped_response.lstrip(
+                    ":\\n "
+                )  # Clean potential leading chars
                 logger.warning("Used prompt stripping as fallback for extraction.")
+                logger.info(
+                    f"DEBUG: Fallback 1 final response (first 50 chars): '{stripped_response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{stripped_response[-50:]}'"
+                )
                 return stripped_response
 
-        # Fallback 3: The text between the prompt and first end marker
-        for end_marker in end_markers:
-            if end_marker in full_output and prompt in full_output:
-                potential_response = (
-                    full_output.split(prompt, 1)[1].split(end_marker)[0].strip()
+        # Fallback 2: Check if the *entire* output seems to be the answer (no prompt structure)
+        # This might happen if the model completely ignored the prompt format
+        is_likely_answer_only = True
+        for marker in assistant_markers + [
+            "<|system|>",
+            "system:",
+            "<|user|>",
+            "user:",
+        ]:
+            if (
+                marker in normalized_output[: len(prompt) // 2]
+            ):  # Check only the start for prompt markers
+                is_likely_answer_only = False
+                break
+
+        if is_likely_answer_only:
+            logger.warning(
+                "Output does not seem to contain standard prompt markers, assuming entire output is the response."
+            )
+            response = normalized_output
+            # Still try to remove end markers
+            earliest_end_marker_pos = len(response)
+            found_end_marker = None
+            for end_marker in end_markers:
+                pos = response.find(end_marker)
+                if pos != -1 and pos < earliest_end_marker_pos:
+                    earliest_end_marker_pos = pos
+                    found_end_marker = end_marker
+
+            if found_end_marker:
+                logger.info(
+                    f"DEBUG: Fallback 2 - Found end marker '{found_end_marker}' at position {earliest_end_marker_pos}"
+                )
+                response = response[:earliest_end_marker_pos].strip()
+
+            if response and response.lower() != self.tokenizer.eos_token.lower():
+                response = response.lstrip(":\\n ")  # Clean potential leading chars
+                logger.info(
+                    f"DEBUG: Fallback 2 final response (first 50 chars): '{response[:50]}'...\"\nDEBUG: (last 50 chars): ...'{response[-50:]}'"
+                )
+                # >>> ADDED DEBUG LOG: Exiting _extract_answer_from_output (Fallback 2)
+                logger.info(
+                    f"DEBUG_GARBLE: Exiting _extract_answer_from_output (Fallback 2) - First 100: '{response[:100]}'"
                 )
                 logger.info(
-                    f"DEBUG: Fallback 3 - potential response with end marker '{end_marker}' (first 50 chars): '{potential_response[:50]}'..."
+                    f"DEBUG_GARBLE: Exiting _extract_answer_from_output (Fallback 2) - Last 100: '{response[-100:]}'"
                 )
-
-                if (
-                    potential_response and len(potential_response) > 20
-                ):  # Ensure it's substantial
-                    logger.warning(
-                        "Used prompt-to-end marker extraction as last resort."
-                    )
-                    return potential_response
+                return response
 
         # If all methods fail, log detailed debugging info:
-        logger.error("Could not reliably extract assistant response from output.")
-        logger.error(f"Prompt used (approx): {prompt[:200]}...")
-        logger.error(f"Full model output: {full_output}")
+        logger.error(
+            "Could not reliably extract assistant response from output using markers or prompt stripping."
+        )
+        logger.error(f"Prompt used (first 200 chars): {prompt[:200]}...")
+        logger.error(
+            f"Full model output (first 300 / last 300 chars):\nSTART>>>\n{normalized_output[:300]}\n...\n<<<END\n{normalized_output[-300:]}"
+        )
 
-        # As absolute last resort, return whatever is there after removing known markers
-        cleaned_output = full_output
-        if assistant_marker in cleaned_output:
-            cleaned_output = cleaned_output.split(assistant_marker)[-1]
-        for end_marker in end_markers:
-            if end_marker in cleaned_output:
-                cleaned_output = cleaned_output.split(end_marker)[0]
-
-        cleaned_output = cleaned_output.strip()
-        if cleaned_output and len(cleaned_output) > 10:
-            logger.warning("Returning partially cleaned output as last resort.")
-            logger.info(
-                f"DEBUG: Last resort response (first 50 chars): '{cleaned_output[:50]}'..."
+        # As absolute last resort, return the original output if it's not too short,
+        # hoping _clean_model_output can salvage something.
+        if len(normalized_output) > 20:
+            logger.warning(
+                "Returning entire normalized output as last resort for cleaning."
             )
-            return cleaned_output
+            # >>> ADDED DEBUG LOG: Exiting _extract_answer_from_output (Last Resort)
+            logger.info(
+                f"DEBUG_GARBLE: Exiting _extract_answer_from_output (Last Resort) - First 100: '{normalized_output[:100]}'"
+            )
+            logger.info(
+                f"DEBUG_GARBLE: Exiting _extract_answer_from_output (Last Resort) - Last 100: '{normalized_output[-100:]}'"
+            )
+            return normalized_output
 
-        return "I apologize, but I encountered an issue generating a proper response. Please try rephrasing your question."
+        # >>> ADDED DEBUG LOG: Exiting _extract_answer_from_output (Error Case)
+        final_error_response = "I apologize, but I encountered an issue generating a proper response. Please try rephrasing your question."
+        logger.info(
+            f"DEBUG_GARBLE: Exiting _extract_answer_from_output (Error Case) - Returning: {final_error_response}"
+        )
+        return final_error_response
 
     def _prepare_context_metadata(
         self, context_docs: Optional[List[Document]]
