@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
     const [expandedSources, setExpandedSources] = useState({});
@@ -12,6 +15,14 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
     
     // Function to extract filename without UUID prefix
     const formatFileName = (fileName) => {
+        // Handle undefined or null fileName
+        if (!fileName) return 'Unknown file';
+        
+        // If fileName is a model name, return it directly (no UUID pattern)
+        if (fileName.includes("TinyLlama") || fileName.toLowerCase().includes("model")) {
+            return fileName;
+        }
+        
         // Check if the filename has a UUID pattern (32 hex chars + underscore)
         const uuidPattern = /^[a-f0-9]{32}_(.+)$/i;
         const match = fileName.match(uuidPattern);
@@ -39,8 +50,81 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                     : 'bg-gray-700 text-gray-100 border border-gray-600'
                             }`}
                         >
-                            <div className="text-current">
-                                {msg.text}
+                            <div className="text-current prose prose-invert prose-sm max-w-none">
+                                {msg.isUser ? (
+                                    msg.text
+                                ) : (
+                                    <ReactMarkdown
+                                        components={{
+                                            // Enhanced markdown rendering with code blocks
+                                            code({node, inline, className, children, ...props}) {
+                                                const match = /language-(\w+)/.exec(className || '');
+                                                return !inline && match ? (
+                                                    <SyntaxHighlighter
+                                                        style={vscDarkPlus}
+                                                        language={match[1]}
+                                                        PreTag="div"
+                                                        {...props}
+                                                    >
+                                                        {String(children).replace(/\n$/, '')}
+                                                    </SyntaxHighlighter>
+                                                ) : (
+                                                    <code className={className} {...props}>
+                                                        {children}
+                                                    </code>
+                                                );
+                                            },
+                                            // Enhance tables with better styling
+                                            table({node, children, ...props}) {
+                                                return (
+                                                    <div className="overflow-x-auto my-4">
+                                                        <table className="border-collapse border border-gray-600 w-full" {...props}>
+                                                            {children}
+                                                        </table>
+                                                    </div>
+                                                );
+                                            },
+                                            thead({node, children, ...props}) {
+                                                return (
+                                                    <thead className="bg-gray-800" {...props}>
+                                                        {children}
+                                                    </thead>
+                                                );
+                                            },
+                                            th({node, children, ...props}) {
+                                                return (
+                                                    <th className="border border-gray-600 px-4 py-2 text-left font-bold" {...props}>
+                                                        {children}
+                                                    </th>
+                                                );
+                                            },
+                                            td({node, children, ...props}) {
+                                                return (
+                                                    <td className="border border-gray-600 px-4 py-2" {...props}>
+                                                        {children}
+                                                    </td>
+                                                );
+                                            },
+                                            // Better headings
+                                            h1({node, children, ...props}) {
+                                                return (
+                                                    <h1 className="text-xl font-bold mt-6 mb-4 pb-2 border-b border-gray-600" {...props}>
+                                                        {children}
+                                                    </h1>
+                                                );
+                                            },
+                                            h2({node, children, ...props}) {
+                                                return (
+                                                    <h2 className="text-lg font-bold mt-5 mb-3" {...props}>
+                                                        {children}
+                                                    </h2>
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        {msg.text}
+                                    </ReactMarkdown>
+                                )}
                             </div>
                             {msg.context && msg.context.length > 0 && (
                                 <div className="mt-3 pt-2 border-t border-gray-600 text-xs text-gray-300">
@@ -63,17 +147,19 @@ const ChatWindow = ({ messages, isLoading, error, chatEndRef }) => {
                                     {expandedSources[index] && (
                                         <div className="mt-2 space-y-2 bg-gray-800 p-2 rounded">
                                             {msg.context.map((ctx, ctxIndex) => (
-                                                <div 
-                                                    key={ctxIndex} 
-                                                    className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
-                                                >
-                                                    <div className="font-medium text-blue-300 mb-1">
-                                                        {formatFileName(ctx.file_name)}
+                                                ctx && (
+                                                    <div 
+                                                        key={ctxIndex} 
+                                                        className="p-2 rounded bg-gray-750 border border-gray-600 hover:border-blue-500 transition-colors"
+                                                    >
+                                                        <div className="font-medium text-blue-300 mb-1">
+                                                            {ctx.source || formatFileName(ctx.file_name)}
+                                                        </div>
+                                                        <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
+                                                            {ctx.content || ctx.snippet || 'No snippet available'}
+                                                        </div>
                                                     </div>
-                                                    <div className="text-gray-300 pl-2 border-l-2 border-blue-500">
-                                                        {ctx.snippet}
-                                                    </div>
-                                                </div>
+                                                )
                                             ))}
                                         </div>
                                     )}

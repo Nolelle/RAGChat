@@ -1,225 +1,470 @@
 # FirstRespondersChatbot
 
-A chatbot system for first responders using Retrieval-Augmented Generation (RAG) to provide accurate information about emergency procedures and protocols.
+A RAG-based chatbot for firefighters and first responders, optimized for Apple Silicon.
 
-## Project Overview
+## Table of Contents
 
-The FirstRespondersChatbot is designed to assist first responders by providing quick and accurate information about emergency procedures, protocols, and best practices. The system uses a combination of:
+- [Key Features](#key-features)
+- [System Overview](#system-overview)
+- [Setup and Installation](#setup-and-installation)
+- [Usage](#usage)
+- [Training Guide](#training-guide)
+- [API Reference](#api-reference)
+- [Project Structure](#project-structure)
+- [Apple Silicon Optimization](#apple-silicon-optimization)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
-1. **Fine-tuned Language Model**: Models available include:
-   - Flan-T5 model fine-tuned on first responder documentation
-   - Phi-3 Mini model for improved quality and efficiency
-   - **New**: Llama 3.1 1B model for state-of-the-art performance
-   - TinyLlama 1.1B model optimized for fast inference ("tinyllama-1.1b-first-responder-fast")
-2. **Retrieval-Augmented Generation (RAG)**: Enhances responses by retrieving relevant information from a document store
-3. **Hybrid Retrieval**: Combines semantic search with keyword-based retrieval for better results
+## Key Features
 
-## Current Model Configuration
+1. **Phi-4-mini-instruct Model**:
+   - Lightweight, high-performance open model from Microsoft
+   - Strong reasoning and instruction-following capabilities
+   - Optimized specifically for first responder domain knowledge
 
-The system is currently configured to use the "tinyllama-1.1b-first-responder-fast" model by default. This model provides a good balance of response quality and speed, particularly on devices with limited resources.
+2. **RAG (Retrieval Augmented Generation)**: Uses your organization's protocol documents
+3. **Optimized for Apple Silicon**: Engineered for performance on M-series chips
+4. **Hybrid Retrieval**: Combines sparse and dense retrieval for better results
+5. **Web and CLI Interfaces**: Multiple ways to interact with the system
 
-## New: Support for Llama 3.1 1B
+## System Overview
 
-The project now supports Meta's Llama 3.1 1B model, which offers several advantages:
+The system leverages Retrieval Augmented Generation to provide accurate, contextual responses to first responder queries by retrieving information from your organization's protocols and manuals.
 
-- State-of-the-art performance for a 1B parameter model
-- Excellent performance on Apple Silicon (M4 Pro with 24GB RAM)
-- Enhanced instruction following capabilities
-- Improved context understanding and response generation
+### Architecture
 
-## Previous Update: Transition to Phi-3 Mini
+The FirstRespondersChatbot consists of three main subsystems:
 
-This project has been upgraded to use Microsoft's Phi-3 Mini model instead of the previous Flan-T5 model. This transition provides several benefits:
+1. **Document Processing**:
+   - PDF and text document ingestion
+   - Document cleaning and chunking
+   - Metadata extraction and embedding
 
-- Better response quality for first responder queries
-- More efficient training on Apple Silicon (M4 Pro)
-- Improved memory management through 4-bit quantization
-- Better handling of complex instructions through the Phi-3 architecture
+2. **Training Pipeline**:
+   - Preprocessing: Optimized for multiple LLM architectures
+   - Dataset creation: Generates training data in appropriate format
+   - Training: Uses LoRA (Low-Rank Adaptation) for efficient fine-tuning
 
-### Changes Implemented
+3. **Inference**:
+   - Hybrid RAG retrieval (sparse + dense)
+   - Context optimization
+   - Response generation
+   - User-friendly interfaces (CLI or web)
 
-1. Switched from sequence-to-sequence to causal language modeling
-2. Implemented QLoRA for parameter-efficient fine-tuning
-3. Adapted prompt formats for Phi-3's chat format
-4. Optimized for Apple Silicon through MPS acceleration
-5. Updated RAG pipeline to work with the new model architecture
+```
+┌─────────────────────┐      ┌─────────────────────┐      ┌─────────────────────┐
+│  Document Pipeline  │      │  Training Pipeline  │      │  Inference System   │
+│                     │      │                     │      │                     │
+│ - PDF/Text Ingestion│      │ - Data Preprocessing│      │ - Query Processing  │
+│ - Text Extraction   │──────│ - Dataset Creation  │      │ - Document Retrieval│
+│ - Chunking          │      │ - Model Fine-tuning │      │ - Context Formation │
+│ - Embedding         │      │ - Evaluation        │──────│ - Response Generation│
+│ - Document Store    │      │                     │      │ - User Interface    │
+└─────────────────────┘      └─────────────────────┘      └─────────────────────┘
+```
 
-## Features
-
-- **Document Processing**: Upload and process PDF, TXT, and MD files containing first responder information
-- **Natural Language Queries**: Ask questions in natural language about emergency procedures
-- **Context-Aware Responses**: Get responses that include citations to the source documents
-- **Hardware Optimization**: Support for Apple Silicon (M1/M2/M3), NVIDIA GPUs, and CPU-only environments
-- **Multiple Interfaces**:
-  - Command-line interface (CLI) for direct interaction
-  - REST API server for integration with web applications
-  - Web UI (coming soon)
-
-## Installation
+## Setup and Installation
 
 ### Prerequisites
 
-- Python 3.9+
-- pip
-- NLTK resources (downloaded automatically during first run)
+- Python 3.12+
+- Hugging Face account (for downloading models)
+- PyTorch with MPS support (for Apple Silicon)
+- Node.js 18+ (for frontend)
 
-### Setup
+### Installation
 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/firstresponders-chatbot.git
+   git clone https://github.com/your-username/firstresponders-chatbot.git
    cd firstresponders-chatbot
    ```
 
-2. Install dependencies:
+2. Create a virtual environment:
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
 
    ```bash
    pip install -e .
    ```
 
-3. (Optional) Download the pre-trained model:
+4. Set up Hugging Face token (recommended for rate limits, optional for Phi-4-mini):
 
    ```bash
-   # Instructions for downloading pre-trained model will be provided
+   huggingface-cli login
+   ```
+
+5. Set up the frontend:
+
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   cd ..
    ```
 
 ## Usage
 
-### Command-Line Interface
+### Training
 
-To start an interactive chat session:
+1. Place your training documents in the `training-docs/` directory (corrected from `docs/`).
 
-```bash
-python cli.py
-```
+2. Run the training script:
 
-To ask a single question:
+   ```bash
+   ./run_training_apple_silicon.sh
+   ```
 
-```bash
-python cli.py "What is the protocol for CPR?"
-```
+   This script will:
+   - Preprocess documents and create chunks
+   - Generate a training dataset (compatible format)
+   - Fine-tune the Phi-4-mini-instruct model with LoRA
+   - Save the trained model to `trained-models/phi4-mini-first-responder`
 
-### Document Processing
+### Running the Chatbot
 
-To preprocess documents:
-
-```bash
-python preprocess.py --docs-dir ./docs --output-dir ./data
-```
-
-### Dataset Creation
-
-To create a training dataset:
+Start the server:
 
 ```bash
-python create_dataset.py --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
+# Run the server using the module execution pattern
+python -m src.firstresponders_chatbot.rag.run_server
 ```
 
-### Model Training
+Access the web interface:
+- Open your browser to http://localhost:8000
 
-The system supports various training configurations optimized for different hardware:
-
-#### Basic Training
+Use the Command-Line Interface (CLI):
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder
+# Start an interactive chat session
+python -m src.firstresponders_chatbot.cli.cli chat
+
+# Ask a single question
+python -m src.firstresponders_chatbot.cli.cli query "Your question here?"
 ```
 
-#### Training with Optimizations (Apple Silicon)
+## Training Guide
+
+### Dataset Preparation
+
+First, preprocess your first responder documents:
 
 ```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder --freeze_encoder --max_source_length 256 --max_target_length 64 --gradient_accumulation_steps 16
+# Use module execution for preprocessing
+python -m preprocess --docs-dir ./docs --output-dir ./data
 ```
 
-#### Two-Stage Training (Recommended)
-
-Stage 1 - Freeze encoder for faster training:
-```bash
-python train.py --model_name google/flan-t5-large --output_dir flan-t5-large-first-responder-stage1 --freeze_encoder --num_train_epochs 3
-```
-
-Stage 2 - Fine-tune the whole model:
-```bash
-python train.py --model_name ./flan-t5-large-first-responder-stage1 --output_dir flan-t5-large-first-responder-final --num_train_epochs 5
-```
-
-#### Advanced Options
-
-- `--rebuild_dataset`: Rebuild the dataset with improved processing techniques
-- `--skip_preprocessing`: Skip tokenization preprocessing (useful for troubleshooting)
-- `--fp16`: Use mixed precision training (not supported on Apple Silicon)
-- `--load_in_8bit`: Load model in 8-bit precision for memory efficiency (NVIDIA GPUs only)
-
-### Server
-
-To start the REST API server:
+Then create a training dataset:
 
 ```bash
-python server.py --host 0.0.0.0 --port 8000
+# Use module execution for dataset creation
+python -m create_dataset --input-file ./data/preprocessed_data.json --output-file ./data/pseudo_data.json
 ```
 
-This will start the server using the default model directory ("tinyllama-1.1b-first-responder-fast"). To use a different model, modify the model_dir parameter in the RAGSystem initialization in server.py.
-
-## API Documentation
-
-The REST API provides the following endpoints:
-
-- `GET /api/health`: Health check endpoint
-- `POST /api/upload`: Upload a document file
-- `POST /api/query`: Query the RAG system
-- `POST /api/clear`: Clear the document index
-- `GET /api/files`: Get a list of indexed files
-
-## Training with Llama 3.1 1B
-
-To train the FirstRespondersChatbot with Llama 3.1 1B, we provide a specialized script optimized for this model. This script is tailored specifically for the Llama 3.1 1B architecture and works well on Apple Silicon M4 Pro with 24GB RAM.
-
-### Prerequisites
-
-Ensure that you have access to the Llama 3.1 1B model. You can request access through HuggingFace's model hub or use their API endpoints.
-
-### Creating a Dataset with Llama 3.1 Format
-
-First, create a dataset specifically formatted for Llama 3.1:
+### Training Command
 
 ```bash
-python create_dataset.py --model_format llama
+# Use module execution for training
+# Example: Train with Phi-4-mini-instruct
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder
 ```
 
-This will create a dataset with the proper Llama chat template format in `data/pseudo_data.json`.
+### Key Training Parameters
 
-### Training the Model
+- `--model_name`: Base model to fine-tune (microsoft/Phi-4-mini-instruct)
+- `--output_dir`: Directory to save the trained model
+- `--batch_size`: Batch size for training (default: 1)
+- `--gradient_accumulation_steps`: Steps to accumulate gradients (default: 32 for MPS, 16 for others)
+- `--learning_rate`: Learning rate (default: 1e-4)
+- `--num_train_epochs`: Number of training epochs (default: 2)
+- `--max_seq_length`: Maximum sequence length (default: 2048 for MPS, 3072 for others)
+- `--train_test_split`: Fraction of data for evaluation (default: 0.1)
 
-To train the model with the optimized Llama 3.1 1B configuration:
+### Hardware-Specific Training Optimizations
+
+#### Apple Silicon (M1/M2/M3/M4)
 
 ```bash
-python train_llama.py --fp16
+# For Phi-4-mini (uses our optimized script)
+./run_training_apple_silicon.sh
+
+# Manual configuration for Phi-4-mini (using module execution)
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --max_seq_length 2048 --gradient_accumulation_steps 32
 ```
 
-For more control over the training process, you can adjust parameters:
+#### NVIDIA GPUs
 
 ```bash
-python train_llama.py \
-  --model_name meta-llama/Meta-Llama-3.1-1B \
-  --batch_size 2 \
-  --gradient_accumulation_steps 8 \
-  --max_seq_length 1024 \
-  --learning_rate 1e-4 \
-  --num_train_epochs 3 \
-  --fp16 \
-  --output_dir llama-3.1-1b-first-responder
+# For Phi-4-mini (using module execution)
+python -m train --model_name microsoft/Phi-4-mini-instruct --output_dir phi4-mini-first-responder --fp16
 ```
 
-### Performance Comparison
+## API Reference
 
-Llama 3.1 1B offers significant improvements over previous models:
+The system exposes REST API endpoints for integration with other applications.
 
-| Model | Parameters | Training Time (3 epochs) | Inference Speed | Response Quality |
-|-------|------------|--------------------------|-----------------|------------------|
-| Flan-T5 Base | 250M | 1.5 hours | Fast | Good |
-| Phi-3 Mini | 3.8B | 4 hours | Medium | Very Good |
-| Llama 3.1 1B | 1B | 2.5 hours | Fast | Excellent |
-| TinyLlama 1.1B | 1.1B | 2 hours | Very Fast | Good |
+### Base URL
 
-The Llama 3.1 1B model provides the best balance of size, training speed, and quality for first responder applications running on Apple Silicon, while TinyLlama offers exceptional speed for scenarios where response time is critical.
+All endpoints are relative to the base URL: `http://localhost:8000`
+
+### Endpoints
+
+#### Health Check
+
+**Endpoint:** `GET /api/health`
+
+**Response:**
+```json
+{
+  "status": "ok"
+}
+```
+
+#### Upload File
+
+**Endpoint:** `POST /api/upload`
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body:
+  - `file`: The file to upload (PDF, TXT, or MD)
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "message": "File 'example.pdf' uploaded and indexed successfully",
+  "file_path": "uploads/12345_example.pdf"
+}
+```
+
+#### Query
+
+**Endpoint:** `POST /api/query`
+
+**Request:**
+- Content-Type: `application/json`
+- Body:
+```json
+{
+  "query": "What should I do in case of a heart attack?"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "answer": "The generated answer from the model...",
+  "context": [
+    {
+      "file_name": "first_aid_manual.pdf",
+      "snippet": "In case of a heart attack, call emergency services immediately..."
+    }
+  ],
+  "query": "What should I do in case of a heart attack?"
+}
+```
+
+#### Clear Index
+
+**Endpoint:** `POST /api/clear`
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "message": "Document index cleared successfully"
+}
+```
+
+#### Get Indexed Files
+
+**Endpoint:** `GET /api/files`
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "files": [
+    {
+      "name": "example.pdf",
+      "path": "uploads/12345_example.pdf",
+      "size": 1024,
+      "type": "pdf"
+    }
+  ]
+}
+```
+
+### JavaScript/React Example
+
+```javascript
+// Example: Upload a file
+const uploadFile = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    const response = await fetch('http://localhost:8000/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    return { status: 'error', message: error.message };
+  }
+};
+
+// Example: Send a query
+const sendQuery = async (query) => {
+  try {
+    const response = await fetch('http://localhost:8000/api/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    });
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error sending query:', error);
+    return { status: 'error', message: error.message };
+  }
+};
+```
+
+## Project Structure
+
+```
+firstresponders-chatbot/
+├── frontend/             # React frontend code
+├── src/                  # Main Python package
+│   └── firstresponders_chatbot/
+│       ├── cli/          # Command Line Interface
+│       │   └── cli.py
+│       ├── preprocessing/# Document preprocessing
+│       │   └── preprocessor.py
+│       ├── rag/          # RAG system (retrieval, server, etc.)
+│       │   ├── rag_system.py
+│       │   └── run_server.py # Server entry point (run with python -m)
+│       │   └── server.py     # FastAPI server logic
+│       └── training/     # Model training pipeline
+│           ├── dataset_creator.py
+│           └── trainer.py
+├── trained-models/       # Saved fine-tuned models
+├── training-docs/        # Source documents for training
+├── data/                 # Processed data and datasets
+├── uploads/              # Uploaded documents for RAG
+├── create_dataset.py     # Script entry point (run with python -m)
+├── main.py               # Potentially old/unused entry point
+├── pdf_test.py           # Test script
+├── preprocess.py         # Script entry point (run with python -m)
+├── pyproject.toml        # Project configuration and dependencies
+├── README.md             # This file
+├── run_training_apple_silicon.sh # Training script
+├── setup_token.py        # Hugging Face token setup utility
+└── train.py              # Script entry point (run with python -m)
+```
+
+### Key Components
+
+- `src/firstresponders_chatbot/rag/run_server.py`: Entry point for the RAG server (run with `python -m`).
+- `src/firstresponders_chatbot/cli/cli.py`: Entry point for the CLI (run with `python -m`).
+- `train.py`: Main training script (run with `python -m`).
+- `preprocess.py`, `create_dataset.py`: Data preparation scripts (run with `python -m`).
+- `frontend/`: React-based user interface.
+
+## Apple Silicon Optimization
+
+The system is specifically optimized for Apple Silicon (M1/M2/M3/M4):
+
+- **MPS Acceleration**: Leverages Metal Performance Shaders for faster inference
+- **Quantization**: Supports 4-bit and 8-bit quantization for efficient memory usage
+- **Memory Optimization**: Efficient memory management for M-series chips
+- **Training Scripts**: Specialized scripts for efficient training on Apple Silicon
+- **Model Selection**: Support for smaller models (TinyLlama, Llama 3.1 1B) that work well on Apple hardware
+
+## Deployment
+
+### Local Deployment
+
+```bash
+# Start the server
+python server.py
+
+# Access the web interface
+# Open http://localhost:8000 in your browser
+```
+
+### Production Deployment
+
+For production deployment, consider:
+
+- Using Gunicorn or uWSGI as WSGI server
+- Setting up NGINX as a reverse proxy
+- Deploying with Docker for containerization
+- Using managed services like AWS or GCP
+
+Example Gunicorn deployment:
+
+```bash
+pip install gunicorn
+gunicorn -w 4 -b 0.0.0.0:8000 "src.firstresponders_chatbot.rag.run_server:create_app()"
+```
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### "ValueError: You should supply an encoding or a list of encodings..."
+- The dataset format doesn't match what the model expects
+- Solution: Use `--skip_preprocessing` flag to let the trainer handle the conversion
+
+#### "CUDA out of memory"
+- Not enough GPU memory
+- Solutions:
+  - Decrease batch size
+  - Increase gradient accumulation steps
+  - Use a smaller model
+  - Enable 4-bit quantization with `--load_in_4bit`
+
+#### Slow training on Apple Silicon
+- Solutions:
+  - Reduce sequence lengths
+  - Reduce gradient accumulation steps
+  - Use smaller batch sizes
+  - Optimize quantization settings
+
+#### "Token not found" error
+- Hugging Face token is not set up correctly
+- Solution: Run `python setup_token.py` and follow the prompts
+
+#### Server fails to start
+- Check that all dependencies are installed
+- Verify model path is correct
+- Ensure port 8000 is not already in use
+- Check logs for specific errors
+
+## License
+
+MIT
+
+## Acknowledgements
+
+- Meta for providing the Llama models
+- Hugging Face for model hosting and transformers library
+- Haystack for document processing capabilities

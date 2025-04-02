@@ -27,34 +27,28 @@ def main():
         "--debug", action="store_true", help="Run the server in debug mode"
     )
     parser.add_argument(
-        "--model-dir",
-        type=str,
-        default="flan-t5-first-responder",
-        help="Directory containing the fine-tuned model",
-    )
-    parser.add_argument(
-        "--uploads-dir",
+        "--document-store-dir",
         type=str,
         default="uploads",
         help="Directory to store uploaded files",
     )
     parser.add_argument(
-        "--embedding-model",
-        type=str,
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        help="Name of the embedding model to use",
+        "--top-k", type=int, default=5, help="Number of documents to retrieve"
     )
     parser.add_argument(
-        "--top-k", type=int, default=5, help="Number of documents to retrieve"
+        "--use-mps",
+        action="store_true",
+        default=True,
+        help="Use MPS (Apple Silicon) when available",
     )
     args = parser.parse_args()
 
     # Initialize RAG system
     rag_system = RAGSystem(
-        model_dir=args.model_dir,
-        uploads_dir=args.uploads_dir,
-        embedding_model=args.embedding_model,
+        model_name_or_path="trained-models/phi4-mini-first-responder",
+        document_store_dir=args.document_store_dir,
         top_k=args.top_k,
+        use_mps=args.use_mps,
     )
 
     # Initialize and run server
